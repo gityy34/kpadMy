@@ -40,7 +40,7 @@ class TypingEngineTest {
         val connection = recordingConnection(events)
         val key = KeySpec.character("a", "A")
 
-        assertTrue(engine.handle(KeySpec.action(KeyType.SHIFT, "⇧"), connection))
+        state.pressShift(now = 100L)
         assertTrue(engine.handle(key, connection))
         assertTrue(engine.handle(key, connection))
 
