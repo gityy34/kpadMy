@@ -28,4 +28,26 @@ class KeyboardLayoutTest {
         assertEquals("q", first.rows[0].keys[0].textFor(shifted = false))
         assertEquals("Q", first.rows[0].keys[0].textFor(shifted = true))
     }
+
+    @Test
+    fun urduLayoutUsesRealUnicodeCharactersAndLanguageSwitch() {
+        val layout = provider.layoutFor(KeyboardLanguage.URDU, KeyboardMode.LETTERS)
+        val text = layout.rows.flatMap { it.keys.asIterable() }
+            .filter { it.type == KeyType.CHARACTER }
+            .joinToString(separator = "") { it.outputText }
+
+        assertTrue(text.contains("ق"))
+        assertTrue(text.contains("ے"))
+        assertTrue(layout.rows.last().keys.any { it.type == KeyType.LANGUAGE_SWITCH })
+    }
+
+    @Test
+    fun languageLayoutsAreCachedAndSymbolsRemainAvailable() {
+        val first = provider.layoutFor(KeyboardLanguage.URDU, KeyboardMode.SYMBOLS)
+        val second = provider.layoutFor(KeyboardLanguage.URDU, KeyboardMode.SYMBOLS)
+
+        assertTrue(first === second)
+        assertTrue(first.rows[0].keys[0].outputText == "1")
+        assertTrue(first.rows.last().keys.any { it.type == KeyType.LANGUAGE_SWITCH })
+    }
 }
