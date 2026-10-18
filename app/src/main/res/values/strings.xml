@@ -4,4 +4,9 @@
     <string name="ime_subtype_english">English</string>
     <string name="keyboard_setup_title">AI Keyboard</string>
     <string name="keyboard_setup_message">Phase 1 provides a fast, reliable English keyboard foundation. Enable it from the system keyboard settings.</string>
+    <string name="open_keyboard_settings">Open Keyboard Settings</string>
+    <string name="personal_learning_title">Personal Suggestions</string>
+    <string name="personalized_suggestions">Personalized suggestions</string>
+    <string name="clear_personal_data">Clear learned words / personal typing data</string>
+    <string name="clear_personal_data_confirmation">Remove all privately learned words and ranking data?</string>
 </resources>
