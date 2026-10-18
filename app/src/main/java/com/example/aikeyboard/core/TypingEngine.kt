@@ -1,0 +1,61 @@
+package com.example.aikeyboard.core
+
+import android.os.Build
+import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputConnection
+
+/**
+ * Synchronous, allocation-light input engine. This is intentionally unaware of the keyboard
+ * View so normal text insertion cannot be delayed by drawing, suggestions, or network work.
+ */
+class TypingEngine(private val state: KeyboardState) {
+
+    fun handle(key: KeySpec, inputConnection: InputConnection?): Boolean {
+        when (key.type) {
+            KeyType.SHIFT -> {
+                state.pressShift(android.os.SystemClock.uptimeMillis())
+                return true
+            }
+
+            KeyType.MODE_SWITCH -> {
+                state.toggleMode()
+                return true
+            }
+        }
+
+        if (inputConnection == null) return false
+
+        return when (key.type) {
+            KeyType.CHARACTER -> {
+                val committed = inputConnection.commitText(key.textFor(state.shiftActive()), 1)
+                if (committed) state.consumeShift()
+                committed
+            }
+
+            KeyType.SPACE -> {
+                val committed = inputConnection.commitText(" ", 1)
+                if (committed) state.consumeShift()
+                committed
+            }
+
+            KeyType.BACKSPACE -> deletePreviousCodePoint(inputConnection)
+            KeyType.ENTER -> commitEnter(inputConnection)
+            else -> false
+        }
+    }
+
+    private fun deletePreviousCodePoint(inputConnection: InputConnection): Boolean =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            inputConnection.deleteSurroundingTextInCodePoints(1, 0)
+        } else {
+            inputConnection.deleteSurroundingText(1, 0)
+        }
+
+    private fun commitEnter(inputConnection: InputConnection): Boolean {
+        val action = state.imeOptions and EditorInfo.IME_MASK_ACTION
+        if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
+            if (inputConnection.performEditorAction(action)) return true
+        }
+        return inputConnection.commitText("\n", 1)
+    }
+}
