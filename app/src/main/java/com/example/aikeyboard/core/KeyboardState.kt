@@ -13,6 +13,9 @@ enum class ShiftState {
 
 /** Mutable state owned by the IME. It contains no UI or persistence dependencies. */
 class KeyboardState(initialMode: KeyboardMode) {
+    var language: KeyboardLanguage = KeyboardLanguage.ENGLISH
+        private set
+
     var mode: KeyboardMode = initialMode
         private set
 
@@ -22,10 +25,27 @@ class KeyboardState(initialMode: KeyboardMode) {
     var imeOptions: Int = 0
         private set
 
+    var editorInputState: EditorInputState = DEFAULT_EDITOR_INPUT_STATE
+        private set
+
     private var lastShiftUptime: Long = Long.MIN_VALUE
 
     fun setEditorOptions(options: Int) {
         imeOptions = options
+        editorInputState = DEFAULT_EDITOR_INPUT_STATE.copy(imeOptions = options)
+        shiftState = ShiftState.OFF
+        lastShiftUptime = Long.MIN_VALUE
+    }
+
+    fun setEditorInfo(info: android.view.inputmethod.EditorInfo) {
+        editorInputState = EditorInputState.from(info)
+        imeOptions = info.imeOptions
+        mode = when (editorInputState.fieldType) {
+            EditorFieldType.NUMBER,
+            EditorFieldType.PHONE,
+            EditorFieldType.PIN -> KeyboardMode.SYMBOLS
+            else -> KeyboardMode.LETTERS
+        }
         shiftState = ShiftState.OFF
         lastShiftUptime = Long.MIN_VALUE
     }
@@ -54,7 +74,24 @@ class KeyboardState(initialMode: KeyboardMode) {
         lastShiftUptime = Long.MIN_VALUE
     }
 
+    fun toggleLanguage() {
+        language = if (language == KeyboardLanguage.ENGLISH) {
+            KeyboardLanguage.URDU
+        } else {
+            KeyboardLanguage.ENGLISH
+        }
+        shiftState = ShiftState.OFF
+        lastShiftUptime = Long.MIN_VALUE
+    }
+
     companion object {
+        private val DEFAULT_EDITOR_INPUT_STATE = EditorInputState(
+            inputType = 0,
+            imeOptions = 0,
+            fieldType = EditorFieldType.TEXT,
+            isSensitive = false,
+            noPersonalizedLearning = false,
+        )
         private const val DOUBLE_TAP_TIMEOUT_MS = 350L
     }
 }
