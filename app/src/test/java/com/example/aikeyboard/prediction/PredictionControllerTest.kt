@@ -14,10 +14,10 @@ import org.junit.Test
 class PredictionControllerTest {
     @Test
     fun staleRapidTypingResultsCannotReachTheCallback() {
+        val releaseStaleWork = CountDownLatch(1)
         val engine = PredictionEngine { snapshot ->
             when (snapshot.currentWord) {
-                "t" -> Thread.sleep(180)
-                "th" -> Thread.sleep(120)
+                "t", "th", "thi" -> releaseStaleWork.await(2, TimeUnit.SECONDS)
             }
             listOf(SuggestionCandidate(
                 text = snapshot.currentWord,
@@ -37,9 +37,12 @@ class PredictionControllerTest {
             results += it.snapshot.currentWord
             completed.countDown()
         }
+        // Hold all older requests until the newest request has been published. This verifies
+        // stale-result rejection itself instead of depending on scheduler timing.
+        releaseStaleWork.countDown()
 
         assertTrue(completed.await(2, TimeUnit.SECONDS))
-        Thread.sleep(250)
+        Thread.sleep(50)
         assertEquals(listOf("this"), results.toList())
         controller.close()
     }
