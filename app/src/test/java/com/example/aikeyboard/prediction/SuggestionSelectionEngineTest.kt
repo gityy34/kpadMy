@@ -30,7 +30,7 @@ class SuggestionSelectionEngineTest {
         val connection = connection(calls, selected = "helo")
         val result = SuggestionSelectionEngine.apply(
             connection,
-            candidate("hey"),
+            candidate("hello"),
             snapshot("say helo", "helo", 4, 8, selected = "helo"),
         )
 
@@ -44,7 +44,7 @@ class SuggestionSelectionEngineTest {
         val connection = connection(calls, selected = null)
         val result = SuggestionSelectionEngine.apply(
             connection,
-            candidate("hello"),
+            candidate("hey"),
             snapshot(
                 before = "say he",
                 word = "hello",
