@@ -54,7 +54,7 @@ class KeyboardView(
         }
     }
 
-    private var keyboardLayout: KeyboardLayout = layoutProvider.layoutFor(state.mode)
+    private var keyboardLayout: KeyboardLayout = layoutProvider.layoutFor(state.language, state.mode)
     private var rowMetrics: Array<RowMetrics> = emptyArray()
     private var pressedRow = -1
     private var pressedColumn = -1
@@ -84,7 +84,7 @@ class KeyboardView(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val currentLayout = layoutProvider.layoutFor(state.mode)
+        val currentLayout = layoutProvider.layoutFor(state.language, state.mode)
         if (currentLayout !== keyboardLayout) {
             keyboardLayout = currentLayout
             rebuildMetrics()
@@ -103,7 +103,9 @@ class KeyboardView(
                 keyPaint.color = when {
                     isPressed -> PRESSED_KEY_COLOR
                     key.type == KeyType.SHIFT && shifted -> SHIFT_ACTIVE_COLOR
-                    key.type == KeyType.MODE_SWITCH || key.type == KeyType.ENTER -> SPECIAL_KEY_COLOR
+                    key.type == KeyType.MODE_SWITCH ||
+                        key.type == KeyType.LANGUAGE_SWITCH ||
+                        key.type == KeyType.ENTER -> SPECIAL_KEY_COLOR
                     else -> KEY_COLOR
                 }
                 canvas.drawRoundRect(
