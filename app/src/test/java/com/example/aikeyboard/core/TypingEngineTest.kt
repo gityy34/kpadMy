@@ -47,6 +47,16 @@ class TypingEngineTest {
         assertEquals(listOf("A", "a"), events)
     }
 
+    @Test
+    fun languageSwitchDoesNotTouchTheInputConnection() {
+        val state = KeyboardState(KeyboardMode.LETTERS)
+        val engine = TypingEngine(state)
+
+        assertTrue(engine.handle(KeySpec.languageSwitch("اردو"), null))
+
+        assertEquals(KeyboardLanguage.URDU, state.language)
+    }
+
     private fun recordingConnection(events: MutableList<String>): InputConnection =
         Proxy.newProxyInstance(
             InputConnection::class.java.classLoader,
