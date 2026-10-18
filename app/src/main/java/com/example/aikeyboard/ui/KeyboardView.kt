@@ -12,7 +12,6 @@ import com.example.aikeyboard.core.KeySpec
 import com.example.aikeyboard.core.KeyType
 import com.example.aikeyboard.core.KeyboardLayout
 import com.example.aikeyboard.core.KeyboardLayoutProvider
-import com.example.aikeyboard.core.KeyboardMode
 import com.example.aikeyboard.core.KeyboardState
 import kotlin.math.roundToInt
 
@@ -37,23 +36,29 @@ class KeyboardView(
         textAlign = Paint.Align.LEFT
         typeface = android.graphics.Typeface.create("sans", android.graphics.Typeface.NORMAL)
     }
+    private val touchTracker = TouchTracker()
     private val repeatHandler = Handler(Looper.getMainLooper())
     private val repeatRunnable = object : Runnable {
         override fun run() {
-            val key = pressedKey
-            if (key?.type == KeyType.BACKSPACE) {
-                onKeyPressed(key)
-                invalidate()
-                repeatHandler.postDelayed(this, BACKSPACE_REPEAT_INTERVAL_MS)
-            }
+            val key = touchTracker.pressedKey
+            val pointerId = touchTracker.activePointerId
+            if (pointerId == TouchTracker.INVALID_POINTER_ID || key?.type != KeyType.BACKSPACE) return
+
+            onKeyPressed(key)
+            // The callback can synchronously close the editor/IME. Do not reschedule a repeat
+            // after lifecycle cleanup has already cleared the active gesture.
+            if (!touchTracker.owns(pointerId) || touchTracker.pressedKey !== key) return
+            backspaceRepeatCount++
+            invalidate()
+            repeatHandler.postDelayed(this, backspaceRepeatInterval())
         }
     }
 
     private var keyboardLayout: KeyboardLayout = layoutProvider.layoutFor(state.mode)
     private var rowMetrics: Array<RowMetrics> = emptyArray()
-    private var pressedKey: KeySpec? = null
     private var pressedRow = -1
     private var pressedColumn = -1
+    private var backspaceRepeatCount = 0
 
     init {
         isFocusable = true
@@ -125,32 +130,62 @@ class KeyboardView(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                pressedRow = -1
-                pressedColumn = -1
+                // ACTION_DOWN starts a new gesture. A stale gesture is cancelled defensively;
+                // this also guarantees that two touches can never share one repeat loop.
+                clearPressedState()
                 val hit = findKey(event.x, event.y)
+                touchTracker.start(event.getPointerId(0), hit)
                 if (hit != null) {
-                    pressedKey = hit
+                    // Schedule the visual pressed state before calling into InputConnection.
+                    // The text commit is still synchronous and happens in this same event.
+                    invalidate()
                     onKeyPressed(hit)
+                    // State changes such as one-shot Shift consumption and mode switching must
+                    // be reflected without making the next key wait for a later event.
+                    invalidate()
                     if (hit.type == KeyType.BACKSPACE) {
-                        repeatHandler.removeCallbacks(repeatRunnable)
+                        backspaceRepeatCount = 0
                         repeatHandler.postDelayed(repeatRunnable, BACKSPACE_REPEAT_START_DELAY_MS)
                     }
-                    invalidate()
                 }
                 return true
             }
 
-            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                repeatHandler.removeCallbacks(repeatRunnable)
-                pressedKey = null
-                pressedRow = -1
-                pressedColumn = -1
-                invalidate()
-                performClick()
+            MotionEvent.ACTION_POINTER_DOWN -> {
+                // The first pointer owns the key. Extra pointers are consumed but never commit.
                 return true
             }
 
-            MotionEvent.ACTION_MOVE -> return true
+            MotionEvent.ACTION_MOVE -> {
+                // Keep the original key latched through small finger movement. This prevents a
+                // single gesture from committing a second key when crossing a boundary.
+                if (touchTracker.activePointerId != TouchTracker.INVALID_POINTER_ID &&
+                    event.findPointerIndex(touchTracker.activePointerId) < 0
+                ) {
+                    clearPressedState()
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (touchTracker.owns(event.getPointerId(event.actionIndex))) {
+                    clearPressedState()
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_UP -> {
+                if (touchTracker.owns(event.getPointerId(event.actionIndex))) {
+                    clearPressedState()
+                    performClick()
+                }
+                return true
+            }
+
+            MotionEvent.ACTION_CANCEL -> {
+                clearPressedState()
+                return true
+            }
         }
         return true
     }
@@ -161,11 +196,12 @@ class KeyboardView(
     }
 
     fun cancelPendingInput() {
-        repeatHandler.removeCallbacks(repeatRunnable)
-        pressedKey = null
-        pressedRow = -1
-        pressedColumn = -1
-        invalidate()
+        clearPressedState()
+    }
+
+    override fun onDetachedFromWindow() {
+        clearPressedState()
+        super.onDetachedFromWindow()
     }
 
     private fun rebuildMetrics() {
@@ -205,20 +241,24 @@ class KeyboardView(
 
     private fun findKey(x: Float, y: Float): KeySpec? {
         if (rowMetrics.isEmpty()) return null
+        // The visible key rectangles are the hit rectangles. Clamping only at the outer view
+        // edge provides safe edge tolerance without stealing pixels from a neighboring key.
+        val touchX = x.coerceIn(0f, width.toFloat())
+        val touchY = y.coerceIn(0f, height.toFloat())
         for (rowIndex in rowMetrics.indices) {
             val metrics = rowMetrics[rowIndex]
             val isLastRow = rowIndex == rowMetrics.lastIndex
-            if (y >= metrics.top && (y < metrics.bottom || (isLastRow && y == height.toFloat()))) {
+            if (touchY >= metrics.top && (touchY < metrics.bottom || (isLastRow && touchY == height.toFloat()))) {
                 val row = keyboardLayout.rows[rowIndex]
                 for (column in row.keys.indices) {
-                    if (x >= metrics.left[column] && x < metrics.right[column]) {
+                    if (touchX >= metrics.left[column] && touchX < metrics.right[column]) {
                         pressedRow = rowIndex
                         pressedColumn = column
                         return row.keys[column]
                     }
                 }
                 // A boundary pixel at the far edge belongs to the final key.
-                if (x == width.toFloat()) {
+                if (touchX == width.toFloat()) {
                     val last = row.keys.lastIndex
                     pressedRow = rowIndex
                     pressedColumn = last
@@ -227,6 +267,22 @@ class KeyboardView(
             }
         }
         return null
+    }
+
+    private fun clearPressedState() {
+        repeatHandler.removeCallbacks(repeatRunnable)
+        backspaceRepeatCount = 0
+        touchTracker.cancel()
+        pressedRow = -1
+        pressedColumn = -1
+        invalidate()
+    }
+
+    private fun backspaceRepeatInterval(): Long = when {
+        backspaceRepeatCount < 5 -> BACKSPACE_REPEAT_SLOW_INTERVAL_MS
+        backspaceRepeatCount < 15 -> BACKSPACE_REPEAT_MEDIUM_INTERVAL_MS
+        backspaceRepeatCount < 30 -> BACKSPACE_REPEAT_FAST_INTERVAL_MS
+        else -> BACKSPACE_REPEAT_MIN_INTERVAL_MS
     }
 
     private class RowMetrics(val keyCount: Int) {
@@ -238,8 +294,11 @@ class KeyboardView(
 
     private companion object {
         const val KEYBOARD_HEIGHT_DP = 270
-        const val BACKSPACE_REPEAT_START_DELAY_MS = 420L
-        const val BACKSPACE_REPEAT_INTERVAL_MS = 45L
+        const val BACKSPACE_REPEAT_START_DELAY_MS = 360L
+        const val BACKSPACE_REPEAT_SLOW_INTERVAL_MS = 85L
+        const val BACKSPACE_REPEAT_MEDIUM_INTERVAL_MS = 60L
+        const val BACKSPACE_REPEAT_FAST_INTERVAL_MS = 42L
+        const val BACKSPACE_REPEAT_MIN_INTERVAL_MS = 30L
         const val KEY_INSET_DP = 2f
         const val CORNER_RADIUS_DP = 6f
         const val LETTER_TEXT_SIZE_DP = 21f
