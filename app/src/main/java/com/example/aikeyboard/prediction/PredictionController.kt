@@ -20,6 +20,8 @@ class PredictionController(
 
     private val requestCounter = AtomicLong(0L)
 
+    private val resultGate = Any()
+
     @Volatile
     private var pendingRequest: Future<*>? = null
 
@@ -32,12 +34,19 @@ class PredictionController(
         onResult: (PredictionResult) -> Unit,
     ): Long {
         val requestId = requestCounter.incrementAndGet()
-        latestId = requestId
-        pendingRequest?.cancel(false)
-        pendingRequest = executor.submit {
-            val candidates = runCatching { engine.predict(snapshot) }.getOrDefault(emptyList())
-            if (latestId != requestId) return@submit
-            onResult(PredictionResult(requestId, snapshot, candidates))
+        synchronized(resultGate) {
+            latestId = requestId
+            pendingRequest?.cancel(false)
+            pendingRequest = executor.submit {
+                val candidates = runCatching { engine.predict(snapshot) }.getOrDefault(emptyList())
+                synchronized(resultGate) {
+                    if (latestId == requestId) {
+                        // Acceptance and callback are one atomic decision relative to a newer
+                        // request, so an old result cannot slip through during request handoff.
+                        onResult(PredictionResult(requestId, snapshot, candidates))
+                    }
+                }
+            }
         }
         return requestId
     }
@@ -46,16 +55,20 @@ class PredictionController(
 
     @Synchronized
     fun clear() {
-        latestId = requestCounter.incrementAndGet()
-        pendingRequest?.cancel(false)
-        pendingRequest = null
+        synchronized(resultGate) {
+            latestId = requestCounter.incrementAndGet()
+            pendingRequest?.cancel(false)
+            pendingRequest = null
+        }
     }
 
     @Synchronized
     override fun close() {
-        latestId = requestCounter.incrementAndGet()
-        pendingRequest?.cancel(true)
-        pendingRequest = null
+        synchronized(resultGate) {
+            latestId = requestCounter.incrementAndGet()
+            pendingRequest?.cancel(true)
+            pendingRequest = null
+        }
         executor.shutdownNow()
     }
 }
