@@ -5,10 +5,12 @@ on:
     branches:
       - main
       - phase-1-ime-foundation
+      - phase-1-touch-response
   pull_request:
     branches:
       - main
       - phase-1-ime-foundation
+      - phase-1-touch-response
 
 permissions:
   contents: read
@@ -39,6 +41,9 @@ jobs:
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.9"
+
+      - name: Run unit tests
+        run: gradle --no-daemon :app:testDebugUnitTest
 
       - name: Build debug APK
         run: gradle --no-daemon :app:assembleDebug
