@@ -147,9 +147,9 @@ class CompositionController(
     private fun isWordCodePoint(codePoint: Int): Boolean {
         val type = Character.getType(codePoint)
         return Character.isLetterOrDigit(codePoint) ||
-            type == Character.NON_SPACING_MARK ||
-            type == Character.COMBINING_SPACING_MARK ||
-            type == Character.ENCLOSING_MARK ||
+            type == Character.NON_SPACING_MARK.toInt() ||
+            type == Character.COMBINING_SPACING_MARK.toInt() ||
+            type == Character.ENCLOSING_MARK.toInt() ||
             codePoint == '_'.code ||
             codePoint == '\''.code
     }
