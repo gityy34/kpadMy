@@ -1,6 +1,5 @@
 package com.example.aikeyboard.core
 
-import android.os.Build
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 
@@ -21,6 +20,11 @@ class TypingEngine(private val state: KeyboardState) {
                 state.toggleMode()
                 return true
             }
+
+            KeyType.LANGUAGE_SWITCH -> {
+                state.toggleLanguage()
+                return true
+            }
         }
 
         if (inputConnection == null) return false
@@ -38,18 +42,11 @@ class TypingEngine(private val state: KeyboardState) {
                 committed
             }
 
-            KeyType.BACKSPACE -> deletePreviousCodePoint(inputConnection)
+            KeyType.BACKSPACE -> UnicodeSafeDeletion.deletePrevious(inputConnection)
             KeyType.ENTER -> commitEnter(inputConnection)
             else -> false
         }
     }
-
-    private fun deletePreviousCodePoint(inputConnection: InputConnection): Boolean =
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            inputConnection.deleteSurroundingTextInCodePoints(1, 0)
-        } else {
-            inputConnection.deleteSurroundingText(1, 0)
-        }
 
     private fun commitEnter(inputConnection: InputConnection): Boolean {
         val action = state.imeOptions and EditorInfo.IME_MASK_ACTION

@@ -8,6 +8,7 @@ object KeyType {
     const val ENTER = 3
     const val SHIFT = 4
     const val MODE_SWITCH = 5
+    const val LANGUAGE_SWITCH = 6
 }
 
 /**
@@ -58,6 +59,9 @@ class KeySpec private constructor(
                 shiftedLabel = null,
                 weight = weight,
             )
+
+        fun languageSwitch(label: String, weight: Float = 1.25f): KeySpec =
+            action(KeyType.LANGUAGE_SWITCH, label, weight)
 
         fun space(weight: Float = 4f): KeySpec =
             KeySpec(
