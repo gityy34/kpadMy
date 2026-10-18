@@ -17,6 +17,9 @@ data class CompositionSnapshot(
     val activeLanguage: KeyboardLanguage,
     val editorInputState: EditorInputState,
     val generation: Long,
+    /** Word fragments on either side of the cursor; defaults preserve older snapshot callers. */
+    val currentWordBeforeCursor: String = currentWord,
+    val currentWordAfterCursor: String = "",
 ) {
     val hasSelection: Boolean
         get() = selectionStart >= 0 && selectionEnd >= 0 && selectionStart != selectionEnd
@@ -36,6 +39,8 @@ data class CompositionSnapshot(
             activeLanguage = activeLanguage,
             editorInputState = editorInputState,
             generation = generation,
+            currentWordBeforeCursor = "",
+            currentWordAfterCursor = "",
         )
     }
 }
@@ -113,10 +118,12 @@ class CompositionController(
                 selectedText = selected,
                 selectionStart = selectionStart,
                 selectionEnd = selectionEnd,
-                currentWord = currentWord(before),
+                currentWord = currentWord(before) + nextWord(after),
                 activeLanguage = activeLanguage,
                 editorInputState = editorInputState,
                 generation = generation,
+                currentWordBeforeCursor = currentWord(before),
+                currentWordAfterCursor = nextWord(after),
             )
             latestSnapshot = snapshot
             onSnapshot?.invoke(snapshot)
@@ -142,6 +149,16 @@ class CompositionController(
             index = start
         }
         return textBeforeCursor.substring(index)
+    }
+
+    private fun nextWord(textAfterCursor: String): String {
+        var index = 0
+        while (index < textAfterCursor.length) {
+            val codePoint = textAfterCursor.codePointAt(index)
+            if (!isWordCodePoint(codePoint)) break
+            index += Character.charCount(codePoint)
+        }
+        return textAfterCursor.substring(0, index)
     }
 
     private fun isWordCodePoint(codePoint: Int): Boolean {
