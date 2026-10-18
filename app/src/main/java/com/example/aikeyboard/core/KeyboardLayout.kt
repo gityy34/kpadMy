@@ -5,7 +5,10 @@ class KeyboardRow(val keys: Array<KeySpec>)
 class KeyboardLayout(val rows: Array<KeyboardRow>)
 
 interface KeyboardLayoutProvider {
-    fun layoutFor(mode: KeyboardMode): KeyboardLayout
+    fun layoutFor(language: KeyboardLanguage, mode: KeyboardMode): KeyboardLayout
+
+    fun layoutFor(mode: KeyboardMode): KeyboardLayout =
+        layoutFor(KeyboardLanguage.ENGLISH, mode)
 }
 
 /**
@@ -13,7 +16,7 @@ interface KeyboardLayoutProvider {
  * provider without changing the input engine or IME lifecycle.
  */
 class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
-    private val letters = KeyboardLayout(
+    private val englishLetters = KeyboardLayout(
         rows = arrayOf(
             row("qwertyuiop"),
             row("asdfghjkl"),
@@ -26,6 +29,7 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
             ),
             KeyboardRow(
                 arrayOf(
+                    KeySpec.languageSwitch("اردو"),
                     KeySpec.action(KeyType.MODE_SWITCH, "?123", 1.5f),
                     KeySpec.punctuation(","),
                     KeySpec.space(),
@@ -36,28 +40,62 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
         ),
     )
 
-    private val symbols = KeyboardLayout(
+    private val urduLetters = KeyboardLayout(
         rows = arrayOf(
-            row("1234567890"),
-            row("@#$%&*-+()"),
-            row("_\"':;!?/"),
+            row("قوعرتیاےہپ"),
+            row("سڈدذزژشصضط"),
+            row("ظغفکگلنںبم"),
+            row("ٹثجچحخءھئؤ"),
             KeyboardRow(
                 arrayOf(
-                    KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.5f),
-                    KeySpec.punctuation(","),
+                    KeySpec.languageSwitch("EN"),
+                    KeySpec.action(KeyType.MODE_SWITCH, "۱۲۳", 1.5f),
+                    KeySpec.punctuation("،"),
                     KeySpec.space(),
-                    KeySpec.punctuation("."),
-                    KeySpec.action(KeyType.BACKSPACE, "⌫", 1.5f),
+                    KeySpec.punctuation("۔"),
                     KeySpec.action(KeyType.ENTER, "↵", 1.5f),
                 ),
             ),
         ),
     )
 
-    override fun layoutFor(mode: KeyboardMode): KeyboardLayout =
-        if (mode == KeyboardMode.LETTERS) letters else symbols
+    private val englishSymbols = symbolsLayout("اردو", "ABC", ",", ".", "_\"':;!?/")
+    private val urduSymbols = symbolsLayout("EN", "حروف", "،", "۔", "_\"':;!؟/")
+
+    override fun layoutFor(language: KeyboardLanguage, mode: KeyboardMode): KeyboardLayout =
+        when {
+            mode == KeyboardMode.SYMBOLS && language == KeyboardLanguage.URDU -> urduSymbols
+            mode == KeyboardMode.SYMBOLS -> englishSymbols
+            language == KeyboardLanguage.URDU -> urduLetters
+            else -> englishLetters
+        }
 
     private fun row(text: String): KeyboardRow = KeyboardRow(keys(text))
+
+    private fun symbolsLayout(
+        languageLabel: String,
+        modeLabel: String,
+        comma: String,
+        period: String,
+        punctuationRow: String,
+    ): KeyboardLayout = KeyboardLayout(
+        rows = arrayOf(
+            row("1234567890"),
+            row("@#$%&*-+()"),
+            row(punctuationRow),
+            KeyboardRow(
+                arrayOf(
+                    KeySpec.languageSwitch(languageLabel),
+                    KeySpec.action(KeyType.MODE_SWITCH, modeLabel, 1.35f),
+                    KeySpec.punctuation(comma),
+                    KeySpec.space(3.5f),
+                    KeySpec.punctuation(period),
+                    KeySpec.action(KeyType.BACKSPACE, "⌫", 1.5f),
+                    KeySpec.action(KeyType.ENTER, "↵", 1.5f),
+                ),
+            ),
+        ),
+    )
 
     private fun keys(text: String): Array<KeySpec> = Array(text.length) { index ->
         val character = text[index].toString()
