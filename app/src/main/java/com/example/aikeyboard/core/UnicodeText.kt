@@ -85,9 +85,9 @@ object UnicodeText {
 
     private fun isExtend(codePoint: Int): Boolean {
         val type = Character.getType(codePoint)
-        return type == Character.NON_SPACING_MARK ||
-            type == Character.COMBINING_SPACING_MARK ||
-            type == Character.ENCLOSING_MARK ||
+        return type == Character.NON_SPACING_MARK.toInt() ||
+            type == Character.COMBINING_SPACING_MARK.toInt() ||
+            type == Character.ENCLOSING_MARK.toInt() ||
             codePoint in 0xFE00..0xFE0F ||
             codePoint in 0xE0100..0xE01EF ||
             codePoint in 0x1F3FB..0x1F3FF
