@@ -177,6 +177,6 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
     private companion object {
-        const val SuggestionStripViewHeightDp = 50
+        const val SuggestionStripViewHeightDp = 56
     }
 }
