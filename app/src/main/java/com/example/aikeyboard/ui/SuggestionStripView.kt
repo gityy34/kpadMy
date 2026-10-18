@@ -183,8 +183,9 @@ class SuggestionStripView(
 
     private companion object {
         const val DEFAULT_SLOT_COUNT = 3
-        const val DEFAULT_HEIGHT_DP = 50
-        const val TEXT_SIZE_DP = 17f
+        // Keep the strip stable and close to a normal Gboard-sized candidate row.
+        const val DEFAULT_HEIGHT_DP = 56
+        const val TEXT_SIZE_DP = 18f
         const val DIVIDER_WIDTH_DP = 1f
         const val INVALID_POINTER_ID = -1
         val BACKGROUND_COLOR = Color.rgb(248, 249, 251)
