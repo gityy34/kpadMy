@@ -17,11 +17,17 @@ object SuggestionSelectionEngine {
         }
         if (snapshot.currentWord == candidate.text) return true
 
-        val codePointCount = snapshot.currentWord.codePointCount(0, snapshot.currentWord.length)
+        val beforeCodePointCount = snapshot.currentWordBeforeCursor
+            .codePointCount(0, snapshot.currentWordBeforeCursor.length)
+        val afterCodePointCount = snapshot.currentWordAfterCursor
+            .codePointCount(0, snapshot.currentWordAfterCursor.length)
         val deleted = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-            inputConnection.deleteSurroundingTextInCodePoints(codePointCount, 0)
+            inputConnection.deleteSurroundingTextInCodePoints(beforeCodePointCount, afterCodePointCount)
         } else {
-            inputConnection.deleteSurroundingText(snapshot.currentWord.length, 0)
+            inputConnection.deleteSurroundingText(
+                snapshot.currentWordBeforeCursor.length,
+                snapshot.currentWordAfterCursor.length,
+            )
         }
         return deleted && inputConnection.commitText(candidate.text, 1)
     }

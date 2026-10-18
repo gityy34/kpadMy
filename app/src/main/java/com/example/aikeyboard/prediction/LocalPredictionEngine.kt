@@ -15,7 +15,7 @@ class LocalPredictionEngine(
 
         val before = snapshot.textBeforeCursor
         val currentWord = snapshot.currentWord
-        val context = contextWords(before.removeSuffix(currentWord))
+        val context = contextWords(before.removeSuffix(snapshot.currentWordBeforeCursor))
 
         val candidates = if (currentWord.isNotEmpty()) {
             wordCandidates(snapshot, currentWord, context)
