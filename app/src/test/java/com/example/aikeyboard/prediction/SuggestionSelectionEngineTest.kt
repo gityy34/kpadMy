@@ -21,7 +21,7 @@ class SuggestionSelectionEngineTest {
         )
 
         assertTrue(result)
-        assertEquals(listOf("delete:4", "commit:hello"), calls)
+        assertEquals(listOf("delete:4:0", "commit:hello"), calls)
     }
 
     @Test
@@ -30,12 +30,33 @@ class SuggestionSelectionEngineTest {
         val connection = connection(calls, selected = "helo")
         val result = SuggestionSelectionEngine.apply(
             connection,
-            candidate("hello"),
+            candidate("hey"),
             snapshot("say helo", "helo", 4, 8, selected = "helo"),
         )
 
         assertTrue(result)
         assertEquals(listOf("commit:hello"), calls)
+    }
+
+    @Test
+    fun candidateReplacementCoversWordOnBothSidesOfCursor() {
+        val calls = mutableListOf<String>()
+        val connection = connection(calls, selected = null)
+        val result = SuggestionSelectionEngine.apply(
+            connection,
+            candidate("hello"),
+            snapshot(
+                before = "say he",
+                word = "hello",
+                start = 6,
+                end = 6,
+                wordBeforeCursor = "he",
+                wordAfterCursor = "llo",
+            ),
+        )
+
+        assertTrue(result)
+        assertEquals(listOf("delete:2:3", "commit:hey"), calls)
     }
 
     private fun connection(calls: MutableList<String>, selected: String?): InputConnection =
@@ -46,11 +67,11 @@ class SuggestionSelectionEngineTest {
             when (method.name) {
                 "getSelectedText" -> selected
                 "deleteSurroundingTextInCodePoints" -> {
-                    calls += "delete:${args?.get(0)}"
+                    calls += "delete:${args?.get(0)}:${args?.get(1)}"
                     true
                 }
                 "deleteSurroundingText" -> {
-                    calls += "delete:${args?.get(0)}"
+                    calls += "delete:${args?.get(0)}:${args?.get(1)}"
                     true
                 }
                 "commitText" -> {
@@ -78,6 +99,8 @@ class SuggestionSelectionEngineTest {
         start: Int,
         end: Int,
         selected: String? = null,
+        wordBeforeCursor: String = word,
+        wordAfterCursor: String = "",
     ) = CompositionSnapshot(
         textBeforeCursor = before,
         textAfterCursor = " now",
@@ -88,5 +111,7 @@ class SuggestionSelectionEngineTest {
         activeLanguage = KeyboardLanguage.ENGLISH,
         editorInputState = EditorInputState.from(0, 0),
         generation = 1L,
+        currentWordBeforeCursor = wordBeforeCursor,
+        currentWordAfterCursor = wordAfterCursor,
     )
 }
