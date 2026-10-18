@@ -39,4 +39,17 @@ class KeyboardStateTest {
         assertEquals(KeyboardMode.SYMBOLS, state.mode)
         assertEquals(ShiftState.OFF, state.shiftState)
     }
+
+    @Test
+    fun languageSwitchIsImmediateAndClearsShiftWithoutRecreatingState() {
+        val state = KeyboardState(KeyboardMode.LETTERS)
+        state.pressShift(now = 100L)
+
+        state.toggleLanguage()
+
+        assertEquals(KeyboardLanguage.URDU, state.language)
+        assertEquals(ShiftState.OFF, state.shiftState)
+        state.toggleLanguage()
+        assertEquals(KeyboardLanguage.ENGLISH, state.language)
+    }
 }
