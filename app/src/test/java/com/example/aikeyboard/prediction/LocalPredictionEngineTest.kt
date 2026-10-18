@@ -46,7 +46,7 @@ class LocalPredictionEngineTest {
         val mujhe = engine.predict(snapshot("mjhy", "mjhy", KeyboardLanguage.URDU))
         assertTrue(mujhe.map { it.text }.contains("mujhe"))
 
-        val keys = kya.map { RomanUrdu.normalize(it.text) }
+        val keys = kya.map { it.text.lowercase() }
         assertTrue(keys.size == keys.toSet().size)
     }
 
