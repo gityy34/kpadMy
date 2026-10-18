@@ -183,11 +183,9 @@ class LocalPredictionEngine(
     ): List<SuggestionCandidate> {
         val best = LinkedHashMap<String, SuggestionCandidate>()
         for (candidate in candidates) {
-            val key = if (candidate.language == PredictionLanguage.ROMAN_URDU) {
-                RomanUrdu.normalize(candidate.text)
-            } else {
-                candidate.text.lowercase(Locale.ROOT)
-            }
+            // Keep meaningful Roman Urdu spelling variants (for example kyaa and kya) visible;
+            // deduplicate only the same rendered candidate, not distinct user-facing spellings.
+            val key = candidate.text.lowercase(Locale.ROOT)
             val existing = best[key]
             if (existing == null || candidate.score > existing.score ||
                 candidate.kind == SuggestionKind.TYPED
