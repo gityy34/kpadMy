@@ -143,7 +143,7 @@ class KeyboardInputMethodService : InputMethodService() {
         val toolbar = KeyboardToolbarView(
             context = this,
             initialOrder = keyboardSettings.toolbarOrder(),
-            onTools = ::showTools,
+            onTools = ::onToolsPressed,
             onMic = ::showVoice,
             onToolbarAction = ::onToolbarAction,
             onCandidateSelected = ::onSuggestionSelected,
@@ -167,7 +167,11 @@ class KeyboardInputMethodService : InputMethodService() {
                     if (result) editHistory.record(beforeEdit, editHistory.capture(connection))
                     result
                 }
-                if (committed) recordLearningBoundary(key)
+                if (committed) {
+                    recordLearningBoundary(key)
+                    // Keep the session history through all typing, then end it after Send/Enter.
+                    if (key.type == KeyType.ENTER) editHistory.clear()
+                }
                 updateToolbarForKey(key)
                 // This only schedules a bounded background read after the synchronous commit.
                 // It never sits in front of the key-to-InputConnection path.
@@ -448,11 +452,32 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun onSpaceCursorMoved(direction: Int) {
         val connection = currentInputConnection ?: return
-        val keyCode = if (direction > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
-        // Let the active editor perform cursor movement. This preserves its own Unicode,
-        // selection, and grapheme-boundary behavior instead of manually editing UTF-16 text.
-        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        val extracted = connection.getExtractedText(ExtractedTextRequest().apply {
+            hintMaxChars = 0
+        }, 0) ?: return
+        val text = extracted.text?.toString() ?: return
+        val start = extracted.selectionStart
+        val end = extracted.selectionEnd
+        if (start < 0 || end < 0) return
+
+        // Collapse an existing selection in the travel direction, then move by one Unicode
+        // code point. The position is always clamped to the actual editor text boundaries.
+        val cursor = if (start != end) {
+            if (direction > 0) maxOf(start, end) else minOf(start, end)
+        } else {
+            start
+        }
+        val next = if (direction > 0) {
+            if (cursor >= text.length) return
+            cursor + Character.charCount(text.codePointAt(cursor))
+        } else {
+            if (cursor <= 0) return
+            val candidate = cursor - 1
+            if (candidate > 0 && Character.isLowSurrogate(text[candidate]) &&
+                Character.isHighSurrogate(text[candidate - 1])
+            ) candidate - 1 else candidate
+        }.coerceIn(0, text.length)
+        if (next != cursor) connection.setSelection(next, next)
     }
 
     private fun onBackspaceSwipeStarted(): Boolean {
@@ -657,6 +682,7 @@ class KeyboardInputMethodService : InputMethodService() {
         toolsPanel = null
         refreshTheme()
         toolbarView?.showToolbarActions()
+        toolbarView?.setClosePanelMode(false)
         val container = contentContainer ?: return
         container.removeAllViews()
         keyboardView?.let { view ->
@@ -679,6 +705,7 @@ class KeyboardInputMethodService : InputMethodService() {
         contentMode = ContentMode.TOOLS
         clearSuggestions()
         toolbarView?.showToolbarActions()
+        toolbarView?.setClosePanelMode(true)
         contentContainer?.let { container ->
             container.removeAllViews()
             val tools = ToolsPanelView(
@@ -698,6 +725,14 @@ class KeyboardInputMethodService : InputMethodService() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ))
+        }
+    }
+
+    private fun onToolsPressed() {
+        if (contentMode == ContentMode.TOOLS || toolbarView?.isClosePanelMode() == true) {
+            setKeyboardContent()
+        } else {
+            showTools()
         }
     }
 

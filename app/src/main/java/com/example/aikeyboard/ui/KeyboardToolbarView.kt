@@ -73,6 +73,7 @@ class KeyboardToolbarView(
     private val centerItems = initialOrder.toMutableList()
     private var candidates: List<SuggestionCandidate> = emptyList()
     private var centerMode = CenterMode.TOOLBAR
+    private var closePanelMode = false
     private var activePointerId = INVALID_POINTER
     private var pressedIndex = -1
     private var reorderMode = false
@@ -123,10 +124,26 @@ class KeyboardToolbarView(
         if (enabled) showToolbarActions() else invalidate()
     }
 
+    /**
+     * Reuses the permanently reserved left toolbar cell as a close/back control while an
+     * in-keyboard tools panel is open. The cell size and hit target never change.
+     */
+    fun setClosePanelMode(enabled: Boolean) {
+        if (closePanelMode == enabled) return
+        closePanelMode = enabled
+        invalidate()
+    }
+
+    fun isClosePanelMode(): Boolean = closePanelMode
+
     override fun onDraw(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         val edge = EDGE_WIDTH_DP * density
-        drawToolsIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        if (closePanelMode) {
+            drawCloseIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        } else {
+            drawToolsIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        }
         drawMicrophoneIcon(canvas, width - edge / 2f, pressedIndex == EDGE_MIC)
         canvas.drawRect(edge - 1f, 0f, edge, height.toFloat(), dividerPaint)
         canvas.drawRect(width - edge, 0f, width - edge + 1f, height.toFloat(), dividerPaint)
@@ -274,6 +291,21 @@ class KeyboardToolbarView(
         iconStrokePaint.style = Paint.Style.STROKE
     }
 
+    private fun drawCloseIcon(canvas: Canvas, centerX: Float, pressed: Boolean) {
+        if (pressed) {
+            canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
+                centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
+        }
+        iconStrokePaint.color = theme.textColor
+        iconStrokePaint.style = Paint.Style.STROKE
+        iconStrokePaint.strokeWidth = 2.6f * density
+        val centerY = height / 2f
+        val half = 10f * density
+        canvas.drawLine(centerX - half, centerY - half, centerX + half, centerY + half, iconStrokePaint)
+        canvas.drawLine(centerX + half, centerY - half, centerX - half, centerY + half, iconStrokePaint)
+        iconStrokePaint.strokeWidth = 2.2f * density
+    }
+
     private fun drawMicrophoneIcon(canvas: Canvas, centerX: Float, pressed: Boolean) {
         if (pressed) {
             canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
@@ -310,6 +342,16 @@ class KeyboardToolbarView(
     private fun drawText(canvas: Canvas, value: String, left: Float, right: Float, rtl: Boolean) {
         val available = (right - left - 16f * density).roundToInt().coerceAtLeast(1)
         val direction = if (rtl) TextDirectionHeuristics.FIRSTSTRONG_RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR
+        // Keep normal suggestions readable. Longer words step down through a few sizes before
+        // ellipsis is used; they never shrink to an unreadable label.
+        val sizes = floatArrayOf(23f, 21f, 19f, 18f)
+        var selectedSize = sizes.last()
+        for (size in sizes) {
+            textPaint.textSize = size * scaledDensity
+            selectedSize = size
+            if (textPaint.measureText(value) <= available.toFloat()) break
+        }
+        textPaint.textSize = selectedSize * scaledDensity
         val layout = StaticLayout.Builder.obtain(value, 0, value.length, textPaint, available)
             .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setMaxLines(1)
             .setEllipsize(TextUtils.TruncateAt.END)
