@@ -50,6 +50,7 @@ import com.example.aikeyboard.voice.VoiceEvent
 import com.example.aikeyboard.voice.VoicePermissionActivity
 import com.example.aikeyboard.ui.KeyboardToolbarView
 import com.example.aikeyboard.ui.KeyboardView
+import com.example.aikeyboard.ui.FixedImeLayout
 import com.example.aikeyboard.ui.LanguagePanelView
 import com.example.aikeyboard.ui.ResizePanelView
 import com.example.aikeyboard.ui.ToolsPanelView
@@ -73,13 +74,14 @@ class KeyboardInputMethodService : InputMethodService() {
     private var keyboardView: KeyboardView? = null
     private var toolbarView: KeyboardToolbarView? = null
     private var contentContainer: FrameLayout? = null
-    private var rootView: LinearLayout? = null
+    private var rootView: FixedImeLayout? = null
     private var contentMode = ContentMode.KEYBOARD
     private var resizePanel: ResizePanelView? = null
     private var voiceController: VoiceController? = null
     private var safeAreaView: View? = null
     private var safeAreaHeightDp = DEFAULT_SAFE_AREA_HEIGHT_DP
     private var heightBeforeResizeDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
+    private var nextWordPredictionRequested = false
     private val mainHandler = Handler(Looper.getMainLooper())
     private val themeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -167,13 +169,15 @@ class KeyboardInputMethodService : InputMethodService() {
 
         val container = FrameLayout(this)
         contentContainer = container
-        rootView = LinearLayout(this).apply {
+        rootView = FixedImeLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            clipChildren = true
+            clipToPadding = true
             addView(toolbar, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(TOOLBAR_HEIGHT_DP)
             ))
             addView(container, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, 0, 1f
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(keyboardSettings.keyboardHeightDp())
             ))
             // The safe area is a real, fixed row. Keyboard and glide geometry never extend into it.
             addView(View(this@KeyboardInputMethodService).apply {
@@ -183,7 +187,7 @@ class KeyboardInputMethodService : InputMethodService() {
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(safeAreaHeightDp)
             ))
         }
-        updateSafeAreaHeight(keyboardSettings.keyboardHeightDp())
+        updateImeHeight(keyboardSettings.keyboardHeightDp())
         setKeyboardContent()
         return rootView!!
     }
@@ -194,6 +198,7 @@ class KeyboardInputMethodService : InputMethodService() {
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         keyboardState.setEditorInfo(attribute)
         latestCompositionSnapshot = null
+        nextWordPredictionRequested = false
         clearSuggestions()
         toolbarView?.showToolbarActions()
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
@@ -206,6 +211,7 @@ class KeyboardInputMethodService : InputMethodService() {
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         keyboardState.setEditorInfo(info)
         latestCompositionSnapshot = null
+        nextWordPredictionRequested = false
         clearSuggestions()
         toolbarView?.showToolbarActions()
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
@@ -287,9 +293,12 @@ class KeyboardInputMethodService : InputMethodService() {
             latestCompositionSnapshot = snapshot
             if (contentMode != ContentMode.KEYBOARD) return@requestSnapshot
             if (snapshot.currentWord.isEmpty()) {
-                predictionController.clear()
-                toolbarView?.showToolbarActions()
-                return@requestSnapshot
+                val showNextWord = nextWordPredictionRequested && !endsSentence(snapshot.textBeforeCursor)
+                if (!showNextWord) {
+                    predictionController.clear()
+                    toolbarView?.showToolbarActions()
+                    return@requestSnapshot
+                }
             }
             toolbarView?.showSuggestions()
             predictionController.request(snapshot) { result ->
@@ -389,18 +398,43 @@ class KeyboardInputMethodService : InputMethodService() {
             codePoint != '_'.code && codePoint != '\''.code
     }
 
+    private fun endsSentence(text: String): Boolean {
+        val trimmed = text.trimEnd()
+        if (trimmed.isEmpty()) return false
+        val codePoint = trimmed.codePointBefore(trimmed.length)
+        return codePoint == '.'.code || codePoint == '!'.code || codePoint == '?'.code ||
+            codePoint == '؟'.code || codePoint == '۔'.code || codePoint == '\n'.code
+    }
+
     private fun clearSuggestions() {
         latestCompositionSnapshot = null
+        nextWordPredictionRequested = false
         predictionController.clear()
         toolbarView?.clearCandidates()
     }
 
     private fun updateToolbarForKey(key: KeySpec) {
         if (contentMode != ContentMode.KEYBOARD) return
-        val showSuggestions = key.type == KeyType.CHARACTER &&
-            !isBoundaryText(key.outputText)
-        if (showSuggestions) toolbarView?.showSuggestions()
-        else toolbarView?.showToolbarActions()
+        when (key.type) {
+            KeyType.SPACE -> {
+                nextWordPredictionRequested = true
+                toolbarView?.showSuggestions()
+            }
+            KeyType.CHARACTER -> {
+                nextWordPredictionRequested = false
+                if (isBoundaryText(key.outputText)) toolbarView?.showToolbarActions()
+                else toolbarView?.showSuggestions()
+            }
+            KeyType.BACKSPACE -> {
+                nextWordPredictionRequested = false
+                toolbarView?.showSuggestions()
+            }
+            KeyType.ENTER -> {
+                nextWordPredictionRequested = false
+                toolbarView?.showToolbarActions()
+            }
+            else -> Unit
+        }
     }
 
     private fun setKeyboardContent() {
@@ -414,12 +448,11 @@ class KeyboardInputMethodService : InputMethodService() {
         container.removeAllViews()
         keyboardView?.let { view ->
             val heightDp = keyboardSettings.keyboardHeightDp()
+            updateImeHeight(heightDp)
             view.layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                dp(heightDp),
-                Gravity.BOTTOM,
+                FrameLayout.LayoutParams.MATCH_PARENT,
             )
-            updateSafeAreaHeight(heightDp)
             container.addView(view)
         }
         requestCompositionSnapshot()
@@ -594,6 +627,7 @@ class KeyboardInputMethodService : InputMethodService() {
         container.removeAllViews()
         keyboardView?.let { view ->
             updateKeyboardHeight(view, resizeHeightDp)
+            updateImeHeight(resizeHeightDp)
             container.addView(view, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 dp(resizeHeightDp),
@@ -607,7 +641,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onHeightChanged = { value ->
                 resizeHeightDp = value
                 keyboardView?.let { updateKeyboardHeight(it, value) }
-                updateSafeAreaHeight(value)
+                updateImeHeight(value)
             },
             onDone = {
                 keyboardSettings.setKeyboardHeightDp(resizeHeightDp)
@@ -620,7 +654,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onReset = {
                 resizeHeightDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
                 keyboardView?.let { updateKeyboardHeight(it, resizeHeightDp) }
-                updateSafeAreaHeight(resizeHeightDp)
+                updateImeHeight(resizeHeightDp)
                 panel.setHeightDp(resizeHeightDp)
             },
         )
@@ -640,6 +674,24 @@ class KeyboardInputMethodService : InputMethodService() {
         }
         view.requestLayout()
         view.invalidate()
+    }
+
+    private fun updateImeHeight(keyboardHeightDp: Int) {
+        updateSafeAreaHeight(keyboardHeightDp)
+        val container = contentContainer ?: return
+        (container.layoutParams as? LinearLayout.LayoutParams)?.let {
+            it.height = dp(keyboardHeightDp)
+            it.weight = 0f
+            container.layoutParams = it
+        }
+        val root = rootView ?: return
+        val totalHeight = dp(TOOLBAR_HEIGHT_DP + keyboardHeightDp + safeAreaHeightDp)
+        root.setFixedHeightPx(totalHeight)
+        root.layoutParams = (root.layoutParams ?: LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            totalHeight,
+        )).apply { height = totalHeight }
+        root.requestLayout()
     }
 
     private fun updateSafeAreaHeight(keyboardHeightDp: Int) {
