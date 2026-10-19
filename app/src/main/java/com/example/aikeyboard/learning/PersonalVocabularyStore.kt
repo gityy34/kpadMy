@@ -44,9 +44,9 @@ class PersonalVocabularyStore(
     override fun learn(
         word: String,
         language: PredictionLanguage,
-        contextKey: String? = null,
-        explicitlyAccepted: Boolean = false,
-        nowMillis: Long = System.currentTimeMillis(),
+        contextKey: String?,
+        explicitlyAccepted: Boolean,
+        nowMillis: Long,
     ) {
         if (!enabled() || !PersonalLearningPolicy.isUsefulWord(word)) return
         val normalized = PersonalLearningPolicy.normalize(word, language)
