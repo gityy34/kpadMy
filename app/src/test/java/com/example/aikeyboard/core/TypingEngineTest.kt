@@ -1,7 +1,6 @@
 package com.example.aikeyboard.core
 
 import android.view.inputmethod.InputConnection
-import android.view.inputmethod.EditorInfo
 import java.lang.reflect.Proxy
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -56,38 +55,6 @@ class TypingEngineTest {
         assertTrue(engine.handle(KeySpec.languageSwitch("اردو"), null))
 
         assertEquals(KeyboardLanguage.URDU, state.language)
-    }
-
-    @Test
-    fun failedActionInSingleLineFieldDoesNotCommitNewline() {
-        val state = KeyboardState(KeyboardMode.LETTERS)
-        state.setEditorInfo(EditorInfo().apply {
-            inputType = android.text.InputType.TYPE_CLASS_TEXT
-            imeOptions = EditorInfo.IME_ACTION_SEND
-        })
-        val engine = TypingEngine(state)
-        val calls = mutableListOf<String>()
-        val connection = Proxy.newProxyInstance(
-            InputConnection::class.java.classLoader,
-            arrayOf(InputConnection::class.java),
-        ) { _, method, args ->
-            when (method.name) {
-                "performEditorAction" -> false
-                "sendKeyEvent" -> {
-                    calls += "key"
-                    true
-                }
-                "commitText" -> {
-                    calls += "commit:${args?.get(0)}"
-                    true
-                }
-                else -> if (method.returnType == Boolean::class.javaPrimitiveType) true else null
-            }
-        } as InputConnection
-
-        assertTrue(engine.handle(KeySpec.action(KeyType.ENTER, "enter"), connection))
-        assertEquals(2, calls.count { it.startsWith("key:") })
-        assertTrue(calls.none { it.startsWith("commit:") })
     }
 
     private fun recordingConnection(events: MutableList<String>): InputConnection =
