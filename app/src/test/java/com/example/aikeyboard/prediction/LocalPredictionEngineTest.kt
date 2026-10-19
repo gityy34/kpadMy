@@ -65,6 +65,17 @@ class LocalPredictionEngineTest {
         assertTrue(result.isEmpty())
     }
 
+    @Test
+    fun structuredContactEditorsNeverProduceCandidates() {
+        val email = EditorInputState.from(
+            android.text.InputType.TYPE_CLASS_TEXT or
+                android.text.InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            0,
+        )
+        val result = engine.predict(snapshot("name", "name", KeyboardLanguage.ENGLISH, email))
+        assertTrue(result.isEmpty())
+    }
+
     private fun snapshot(
         before: String,
         word: String,
