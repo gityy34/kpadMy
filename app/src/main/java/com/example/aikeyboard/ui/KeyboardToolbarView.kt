@@ -73,6 +73,7 @@ class KeyboardToolbarView(
     private val centerItems = initialOrder.toMutableList()
     private var candidates: List<SuggestionCandidate> = emptyList()
     private var centerMode = CenterMode.TOOLBAR
+    private var closePanelMode = false
     private var activePointerId = INVALID_POINTER
     private var pressedIndex = -1
     private var reorderMode = false
@@ -123,10 +124,26 @@ class KeyboardToolbarView(
         if (enabled) showToolbarActions() else invalidate()
     }
 
+    /**
+     * Reuses the permanently reserved left toolbar cell as a close/back control while an
+     * in-keyboard tools panel is open. The cell size and hit target never change.
+     */
+    fun setClosePanelMode(enabled: Boolean) {
+        if (closePanelMode == enabled) return
+        closePanelMode = enabled
+        invalidate()
+    }
+
+    fun isClosePanelMode(): Boolean = closePanelMode
+
     override fun onDraw(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         val edge = EDGE_WIDTH_DP * density
-        drawToolsIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        if (closePanelMode) {
+            drawCloseIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        } else {
+            drawToolsIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        }
         drawMicrophoneIcon(canvas, width - edge / 2f, pressedIndex == EDGE_MIC)
         canvas.drawRect(edge - 1f, 0f, edge, height.toFloat(), dividerPaint)
         canvas.drawRect(width - edge, 0f, width - edge + 1f, height.toFloat(), dividerPaint)
@@ -272,6 +289,21 @@ class KeyboardToolbarView(
         canvas.drawCircle(centerX + 4f * density, y2, knob, iconStrokePaint)
         canvas.drawCircle(centerX - 1f * density, y3, knob, iconStrokePaint)
         iconStrokePaint.style = Paint.Style.STROKE
+    }
+
+    private fun drawCloseIcon(canvas: Canvas, centerX: Float, pressed: Boolean) {
+        if (pressed) {
+            canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
+                centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
+        }
+        iconStrokePaint.color = theme.textColor
+        iconStrokePaint.style = Paint.Style.STROKE
+        iconStrokePaint.strokeWidth = 2.6f * density
+        val centerY = height / 2f
+        val half = 10f * density
+        canvas.drawLine(centerX - half, centerY - half, centerX + half, centerY + half, iconStrokePaint)
+        canvas.drawLine(centerX + half, centerY - half, centerX - half, centerY + half, iconStrokePaint)
+        iconStrokePaint.strokeWidth = 2.2f * density
     }
 
     private fun drawMicrophoneIcon(canvas: Canvas, centerX: Float, pressed: Boolean) {
