@@ -5,4 +5,14 @@
         android:label="@string/ime_subtype_english"
         android:imeSubtypeMode="keyboard"
         android:isAsciiCapable="true" />
+    <subtype
+        android:imeSubtypeLocale="ur_PK"
+        android:label="@string/ime_subtype_urdu"
+        android:imeSubtypeMode="keyboard"
+        android:isAsciiCapable="false" />
+    <subtype
+        android:imeSubtypeLocale="en_US"
+        android:label="@string/ime_subtype_roman_urdu"
+        android:imeSubtypeMode="keyboard"
+        android:isAsciiCapable="true" />
 </input-method>

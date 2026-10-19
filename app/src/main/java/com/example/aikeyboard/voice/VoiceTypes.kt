@@ -3,7 +3,8 @@ package com.example.aikeyboard.voice
 enum class SpeechLanguage(val localeTag: String, val label: String) {
     ENGLISH("en-US", "English"),
     URDU("ur-PK", "Urdu"),
-    AUTO("en-US", "Auto"),
+    // Auto mode must not silently force the recognizer to English.
+    AUTO("", "Auto"),
 }
 
 enum class TranslationTarget(val label: String) {

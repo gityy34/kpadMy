@@ -26,6 +26,15 @@ data class EditorInputState(
     val isMultiline: Boolean
         get() = fieldType == EditorFieldType.MULTILINE_TEXT
 
+    /** Prediction is disabled for fields where suggestions could expose sensitive input. */
+    val suppressSuggestions: Boolean
+        get() = isSensitive || fieldType in setOf(
+            EditorFieldType.EMAIL,
+            EditorFieldType.URL,
+            EditorFieldType.PHONE,
+            EditorFieldType.NUMBER,
+        )
+
     companion object {
         fun from(info: EditorInfo): EditorInputState = from(info.inputType, info.imeOptions)
 

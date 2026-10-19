@@ -1,5 +1,6 @@
 package com.example.aikeyboard.core
 
+import android.os.Build
 import android.view.inputmethod.InputConnection
 import java.io.Closeable
 import java.util.concurrent.ExecutorService
@@ -95,7 +96,7 @@ class CompositionController(
         val selectionEnd = previous.selectionEnd
         pendingRequest?.cancel(false)
 
-        if (inputConnection == null || editorInputState.isSensitive) {
+        if (inputConnection == null || editorInputState.suppressSuggestions) {
             latestSnapshot = CompositionSnapshot.empty(editorInputState, activeLanguage, generation).copy(
                 selectionStart = selectionStart,
                 selectionEnd = selectionEnd,
@@ -107,23 +108,21 @@ class CompositionController(
         pendingRequest = executor.submit {
             if (generationCounter.get() != generation) return@submit
 
-            val before = inputConnection.getTextBeforeCursor(MAX_CONTEXT_UTF16, 0)?.toString().orEmpty()
-            val after = inputConnection.getTextAfterCursor(MAX_CONTEXT_UTF16, 0)?.toString().orEmpty()
-            val selected = inputConnection.getSelectedText(0)?.toString()
+            val context = readContext(inputConnection)
             if (generationCounter.get() != generation) return@submit
 
             val snapshot = CompositionSnapshot(
-                textBeforeCursor = before,
-                textAfterCursor = after,
-                selectedText = selected,
+                textBeforeCursor = context.before,
+                textAfterCursor = context.after,
+                selectedText = context.selected,
                 selectionStart = selectionStart,
                 selectionEnd = selectionEnd,
-                currentWord = currentWord(before) + nextWord(after),
+                currentWord = currentWord(context.before) + nextWord(context.after),
                 activeLanguage = activeLanguage,
                 editorInputState = editorInputState,
                 generation = generation,
-                currentWordBeforeCursor = currentWord(before),
-                currentWordAfterCursor = nextWord(after),
+                currentWordBeforeCursor = currentWord(context.before),
+                currentWordAfterCursor = nextWord(context.after),
             )
             latestSnapshot = snapshot
             onSnapshot?.invoke(snapshot)
@@ -139,6 +138,39 @@ class CompositionController(
         pendingRequest = null
         executor.shutdownNow()
     }
+
+    /** One bounded surrounding-text IPC on modern Android, with the compatible fallback below. */
+    private fun readContext(inputConnection: InputConnection): ContextRead {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            val surrounding = runCatching {
+                inputConnection.getSurroundingText(MAX_CONTEXT_UTF16, MAX_CONTEXT_UTF16, 0)
+            }.getOrNull()
+            if (surrounding != null) {
+                val text = surrounding.text.toString()
+                val start = surrounding.selectionStart.coerceIn(0, text.length)
+                val end = surrounding.selectionEnd.coerceIn(start, text.length)
+                return ContextRead(
+                    before = text.substring(0, start),
+                    after = text.substring(end),
+                    selected = if (start == end) null else text.substring(start, end),
+                )
+            }
+        }
+
+        val before = inputConnection.getTextBeforeCursor(MAX_CONTEXT_UTF16, 0)?.toString().orEmpty()
+        val after = inputConnection.getTextAfterCursor(MAX_CONTEXT_UTF16, 0)?.toString().orEmpty()
+        return ContextRead(
+            before = before,
+            after = after,
+            selected = inputConnection.getSelectedText(0)?.toString(),
+        )
+    }
+
+    private data class ContextRead(
+        val before: String,
+        val after: String,
+        val selected: String?,
+    )
 
     private fun currentWord(textBeforeCursor: String): String {
         var index = textBeforeCursor.length

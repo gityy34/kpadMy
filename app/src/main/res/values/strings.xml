@@ -2,6 +2,8 @@
     <string name="app_name">AI Keyboard</string>
     <string name="ime_name">AI Keyboard</string>
     <string name="ime_subtype_english">English</string>
+    <string name="ime_subtype_urdu">Urdu</string>
+    <string name="ime_subtype_roman_urdu">Roman Urdu</string>
     <string name="keyboard_setup_title">AI Keyboard</string>
     <string name="keyboard_setup_message">Phase 1 provides a fast, reliable English keyboard foundation. Enable it from the system keyboard settings.</string>
     <string name="open_keyboard_settings">Open Keyboard Settings</string>

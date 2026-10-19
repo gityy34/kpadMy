@@ -15,7 +15,7 @@ class LocalPredictionEngine(
 ) : PredictionEngine {
 
     override fun predict(snapshot: CompositionSnapshot): List<SuggestionCandidate> {
-        if (snapshot.editorInputState.isSensitive) return emptyList()
+        if (snapshot.editorInputState.suppressSuggestions) return emptyList()
 
         val before = snapshot.textBeforeCursor
         val currentWord = snapshot.currentWord

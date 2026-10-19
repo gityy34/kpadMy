@@ -26,7 +26,7 @@ class VoiceController(
         transcript = ""
         state = VoiceSessionState.STARTING
         onEvent(VoiceEvent.State(state))
-        speech.start(if (selectedLanguage == SpeechLanguage.AUTO) SpeechLanguage.ENGLISH else selectedLanguage)
+        speech.start(selectedLanguage)
     }
 
     fun pause() {
@@ -39,7 +39,7 @@ class VoiceController(
     fun resume() {
         if (state != VoiceSessionState.PAUSED) return
         state = VoiceSessionState.STARTING
-        speech.start(if (language == SpeechLanguage.AUTO) SpeechLanguage.ENGLISH else language)
+        speech.start(language)
         onEvent(VoiceEvent.State(state))
     }
 
@@ -82,10 +82,11 @@ class VoiceController(
         when (event) {
             is VoiceEvent.PartialText -> onEvent(event)
             is VoiceEvent.Transcript -> {
-                transcript = if (state == VoiceSessionState.PAUSED && transcript.isNotBlank()) {
-                    "$transcript ${event.text}".trim()
-                } else event.text
-                state = VoiceSessionState.RESULT_READY
+                transcript = mergeTranscript(transcript, event.text)
+                // stopListening() is also used for Pause. Keep the session paused when its
+                // final segment arrives so Resume starts a new segment without losing text.
+                val paused = state == VoiceSessionState.PAUSED
+                state = if (paused) VoiceSessionState.PAUSED else VoiceSessionState.RESULT_READY
                 onEvent(VoiceEvent.Transcript(transcript))
                 onEvent(VoiceEvent.State(state))
             }
@@ -97,4 +98,13 @@ class VoiceController(
             is VoiceEvent.Translation -> onEvent(event)
         }
     }
+    private fun mergeTranscript(previous: String, incoming: String): String {
+        val next = incoming.trim()
+        if (next.isEmpty()) return previous
+        if (previous.isBlank()) return next
+        if (next == previous || previous.endsWith(next)) return previous
+        if (next.startsWith(previous)) return next
+        return "$previous $next".trim()
+    }
+
 }

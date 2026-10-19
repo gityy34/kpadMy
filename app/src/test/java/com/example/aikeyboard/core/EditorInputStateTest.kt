@@ -39,4 +39,19 @@ class EditorInputStateTest {
         assertTrue(noLearning.isSensitive)
         assertFalse(EditorInputState.from(InputType.TYPE_CLASS_TEXT, 0).isSensitive)
     }
+
+    @Test
+    fun structuredContactFieldsSuppressSuggestionsWithoutBeingPasswords() {
+        val email = EditorInputState.from(
+            InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_VARIATION_EMAIL_ADDRESS,
+            0,
+        )
+        val phone = EditorInputState.from(InputType.TYPE_CLASS_PHONE, 0)
+        val number = EditorInputState.from(InputType.TYPE_CLASS_NUMBER, 0)
+
+        assertFalse(email.isSensitive)
+        assertTrue(email.suppressSuggestions)
+        assertTrue(phone.suppressSuggestions)
+        assertTrue(number.suppressSuggestions)
+    }
 }

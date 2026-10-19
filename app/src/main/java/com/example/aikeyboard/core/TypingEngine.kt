@@ -2,6 +2,7 @@ package com.example.aikeyboard.core
 
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import android.view.KeyEvent
 
 /**
  * Synchronous, allocation-light input engine. This is intentionally unaware of the keyboard
@@ -58,6 +59,18 @@ class TypingEngine(private val state: KeyboardState) {
         val action = state.imeOptions and EditorInfo.IME_MASK_ACTION
         if (action != EditorInfo.IME_ACTION_NONE && action != EditorInfo.IME_ACTION_UNSPECIFIED) {
             if (inputConnection.performEditorAction(action)) return true
+        }
+
+        // Do not inject a newline when an action field declines its editor action.
+        // Forwarding ENTER preserves the host editor's own fallback behavior.
+        if (!state.editorInputState.isMultiline) {
+            val down = inputConnection.sendKeyEvent(
+                KeyEvent(KeyEvent.ACTION_DOWN, KeyEvent.KEYCODE_ENTER),
+            )
+            val up = inputConnection.sendKeyEvent(
+                KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_ENTER),
+            )
+            return down || up
         }
         return inputConnection.commitText("\n", 1)
     }
