@@ -15,6 +15,7 @@ import android.view.inputmethod.InputMethodManager
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
+import android.view.WindowInsets
 import android.widget.FrameLayout
 import android.widget.EditText
 import android.widget.LinearLayout
@@ -57,6 +58,7 @@ import com.example.aikeyboard.ui.FixedImeLayout
 import com.example.aikeyboard.ui.LanguagePanelView
 import com.example.aikeyboard.ui.ResizePanelView
 import com.example.aikeyboard.ui.ToolsPanelView
+import kotlin.math.roundToInt
 
 /** Android IME lifecycle boundary. All text editing is delegated to the core typing engine. */
 class KeyboardInputMethodService : InputMethodService() {
@@ -83,6 +85,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var voiceController: VoiceController? = null
     private var safeAreaView: View? = null
     private var safeAreaHeightDp = DEFAULT_SAFE_AREA_HEIGHT_DP
+    private var navigationInsetDp = 0
     private var heightBeforeResizeDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
     private var nextWordPredictionRequested = false
     private var backspaceSelection: BackspaceSelection? = null
@@ -185,6 +188,20 @@ class KeyboardInputMethodService : InputMethodService() {
             orientation = LinearLayout.VERTICAL
             clipChildren = true
             clipToPadding = true
+            setOnApplyWindowInsetsListener { _, insets ->
+                val bottomInsetPx = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                    insets.getInsets(WindowInsets.Type.navigationBars()).bottom
+                } else {
+                    @Suppress("DEPRECATION")
+                    insets.systemWindowInsetBottom
+                }
+                val nextInsetDp = pxToDp(bottomInsetPx)
+                if (nextInsetDp != navigationInsetDp) {
+                    navigationInsetDp = nextInsetDp
+                    post { updateImeHeight(keyboardSettings.keyboardHeightDp()) }
+                }
+                insets
+            }
             addView(toolbar, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(TOOLBAR_HEIGHT_DP)
             ))
@@ -820,9 +837,16 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun updateSafeAreaHeight(keyboardHeightDp: Int) {
-        val rowCount = keyboardView?.currentRowCount() ?: DEFAULT_ENGLISH_ROW_COUNT
-        safeAreaHeightDp = (keyboardHeightDp.toFloat() / rowCount)
-            .toInt().coerceAtLeast(MIN_SAFE_AREA_HEIGHT_DP)
+        // The approved reference distance is the TOTAL space from the visible bottom edge of
+        // the bottom row to the end of the IME. The keyboard view can contain unused room when
+        // its saved resize height is larger than the compact visual key block, so subtract that
+        // room before applying the system-safe area. This prevents double-counting insets.
+        val visualBlockDp = keyboardView?.visualKeyBlockHeightDp(keyboardHeightDp)
+            ?: keyboardHeightDp
+        val unusedKeyboardRoomDp = (keyboardHeightDp - visualBlockDp).coerceAtLeast(0)
+        safeAreaHeightDp = (
+            TOTAL_BOTTOM_REGION_DP - navigationInsetDp - unusedKeyboardRoomDp
+        ).coerceAtLeast(MIN_SAFE_AREA_HEIGHT_DP)
         val safe = safeAreaView ?: return
         safe.layoutParams = (safe.layoutParams ?: LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT, dp(safeAreaHeightDp)
@@ -840,13 +864,16 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
+    private fun pxToDp(value: Int): Int =
+        (value / resources.displayMetrics.density).roundToInt().coerceAtLeast(0)
+
     private enum class ContentMode { KEYBOARD, TOOLS, RESIZE, EMOJI, VOICE, LANGUAGE }
 
     private companion object {
-        const val TOOLBAR_HEIGHT_DP = 56
-        const val DEFAULT_SAFE_AREA_HEIGHT_DP = 68
-        const val DEFAULT_ENGLISH_ROW_COUNT = 4
-        const val MIN_SAFE_AREA_HEIGHT_DP = 48
+        const val TOOLBAR_HEIGHT_DP = 48
+        const val DEFAULT_SAFE_AREA_HEIGHT_DP = 62
+        const val TOTAL_BOTTOM_REGION_DP = 62
+        const val MIN_SAFE_AREA_HEIGHT_DP = 0
         const val MIN_GLIDE_CONFIDENCE = 48
         const val MAX_BACKSPACE_WORD_CONTEXT = 512
     }

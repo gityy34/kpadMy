@@ -32,12 +32,13 @@ class KeyboardToolbarView(
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
+    private val scaledDensity = resources.displayMetrics.scaledDensity
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BACKGROUND_COLOR }
     private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = PRESSED_COLOR }
     private val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = DIVIDER_COLOR }
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = TEXT_COLOR
-        textSize = SUGGESTION_TEXT_SIZE_DP * density
+        textSize = SUGGESTION_TEXT_SIZE_SP * scaledDensity
         textAlign = Paint.Align.CENTER
         typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
@@ -317,7 +318,7 @@ class KeyboardToolbarView(
         const val EDGE_WIDTH_DP = 56f
         // Keep suggestions at a clearly readable keyboard-label size. This changes only the
         // text paint; the fixed toolbar height and touch geometry remain unchanged.
-        const val SUGGESTION_TEXT_SIZE_DP = 34f
+        const val SUGGESTION_TEXT_SIZE_SP = 23f
         const val LONG_PRESS_MILLIS = 800L
         const val INVALID_POINTER = -1
         val BACKGROUND_COLOR = Color.rgb(248, 249, 251)

@@ -21,6 +21,7 @@ import com.example.aikeyboard.glide.GlidePathBuffer
 import com.example.aikeyboard.theme.KeyStyle
 import com.example.aikeyboard.theme.KeyboardTheme
 import kotlin.math.hypot
+import kotlin.math.min
 import kotlin.math.roundToInt
 
 /**
@@ -46,6 +47,7 @@ class KeyboardView(
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
+    private val scaledDensity = resources.displayMetrics.scaledDensity
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fontMetrics = Paint.FontMetrics()
     private val keyInset = KEY_INSET_DP * density
@@ -209,8 +211,7 @@ class KeyboardView(
 
                 val label = key.labelFor(shifted)
                 textPaint.color = theme.textColor
-                textPaint.textSize =
-                    (if (key.type == KeyType.CHARACTER) LETTER_TEXT_SIZE_DP else ACTION_TEXT_SIZE_DP) * density
+                textPaint.textSize = keyTextSizeSp(key) * scaledDensity
                 val textWidth = textPaint.measureText(label)
                 textPaint.getFontMetrics(fontMetrics)
                 val baseline = (metrics.top + metrics.bottom - fontMetrics.ascent - fontMetrics.descent) / 2f
@@ -339,6 +340,20 @@ class KeyboardView(
 
     fun currentRowCount(): Int = layoutProvider.layoutFor(state.language, state.mode).rows.size
 
+    /**
+     * Returns the actual visual key block height for the current row count. The outer IME may
+     * contain additional blank space, but keys are never stretched to consume it.
+     */
+    fun visualKeyBlockHeightDp(availableHeightDp: Int): Int {
+        val normalRows = (keyboardLayout.rows.size - 1).coerceAtLeast(1)
+        val available = availableHeightDp.toFloat()
+        val gap = ROW_GAP_DP * normalRows
+        val maxNormalHeight = ((available - BOTTOM_ROW_HEIGHT_DP - gap) / normalRows)
+            .coerceAtLeast(1f)
+        val normalHeight = min(NORMAL_KEY_HEIGHT_DP, maxNormalHeight)
+        return (normalHeight * normalRows + gap + BOTTOM_ROW_HEIGHT_DP).roundToInt()
+    }
+
     override fun onDetachedFromWindow() {
         clearPressedState()
         super.onDetachedFromWindow()
@@ -362,20 +377,33 @@ class KeyboardView(
             }
         }
 
-        val rowHeight = height.toFloat() / keyboardLayout.rows.size
+        val normalRows = (keyboardLayout.rows.size - 1).coerceAtLeast(1)
+        val rowGap = ROW_GAP_DP * density
+        val bottomRowHeight = BOTTOM_ROW_HEIGHT_DP * density
+        val availableHeight = height.toFloat()
+        val maxNormalHeight = (
+            availableHeight - bottomRowHeight - rowGap * normalRows
+        ) / normalRows
+        val normalRowHeight = min(NORMAL_KEY_HEIGHT_DP * density, maxNormalHeight)
+            .coerceAtLeast(1f)
+        var visualTop = 0f
         for (rowIndex in keyboardLayout.rows.indices) {
             val row = keyboardLayout.rows[rowIndex]
             val metrics = rowMetrics[rowIndex]
-            metrics.top = rowIndex * rowHeight
-            metrics.bottom = if (rowIndex == keyboardLayout.rows.lastIndex) height.toFloat() else (rowIndex + 1) * rowHeight
-            var totalWeight = 0f
-            for (key in row.keys) totalWeight += key.weight
-            var cursor = 0f
+            val isBottomRow = rowIndex == keyboardLayout.rows.lastIndex
+            val visualHeight = if (isBottomRow) bottomRowHeight else normalRowHeight
+            val visualBottom = visualTop + visualHeight
+            // The metric bounds include only the existing key inset. This keeps the complete
+            // visible rectangle tappable while leaving the configured gap between neighbors.
+            metrics.top = visualTop - keyInset
+            metrics.bottom = visualBottom + keyInset
+
+            val visualBounds = horizontalVisualBounds(rowIndex, row)
             for (column in row.keys.indices) {
-                metrics.left[column] = cursor
-                cursor += width * (row.keys[column].weight / totalWeight)
-                metrics.right[column] = if (column == row.keys.lastIndex) width.toFloat() else cursor
+                metrics.left[column] = visualBounds[column * 2] - keyInset
+                metrics.right[column] = visualBounds[column * 2 + 1] + keyInset
             }
+            visualTop = visualBottom + if (isBottomRow) 0f else rowGap
         }
         val geometry = ArrayList<GlideKeyGeometry>()
         for (rowIndex in keyboardLayout.rows.indices) {
@@ -392,6 +420,104 @@ class KeyboardView(
             }
         }
         glideGeometry = geometry
+    }
+
+    private fun keyTextSizeSp(key: KeySpec): Float = when (key.type) {
+        KeyType.SPACE -> SPACE_LABEL_TEXT_SIZE_SP
+        KeyType.MODE_SWITCH -> MODE_LABEL_TEXT_SIZE_SP
+        KeyType.CHARACTER -> MAIN_KEY_TEXT_SIZE_SP
+        else -> ACTION_TEXT_SIZE_SP
+    }
+
+    /**
+     * Builds visual key rectangles independently of the logical weights in the language file.
+     * This keeps the approved proportions stable while remaining responsive to the live IME
+     * width. The returned array stores left/right pairs in pixels.
+     */
+    private fun horizontalVisualBounds(rowIndex: Int, row: com.example.aikeyboard.core.KeyboardRow): FloatArray {
+        val count = row.keys.size
+        val result = FloatArray(count * 2)
+        if (count == 0) return result
+
+        val gap = HORIZONTAL_GAP_DP * density
+        val widths = FloatArray(count)
+        val widthDp = width / density
+        val isBottomRow = rowIndex == keyboardLayout.rows.lastIndex
+        val hasWideActions = row.keys.any {
+            it.type == KeyType.SHIFT || it.type == KeyType.BACKSPACE
+        }
+
+        when {
+            isBottomRow -> {
+                row.keys.forEachIndexed { index, key ->
+                    widths[index] = when (key.type) {
+                        KeyType.SPACE -> SPACE_KEY_WIDTH_DP * density
+                        KeyType.MODE_SWITCH, KeyType.ENTER, KeyType.BACKSPACE -> ACTION_KEY_WIDTH_DP * density
+                        else -> NORMAL_KEY_WIDTH_DP * density
+                    }
+                }
+                val targetWidth = widths.sum() + gap * (count - 1)
+                if (targetWidth > width) {
+                    val scale = width / targetWidth
+                    for (index in widths.indices) widths[index] *= scale
+                }
+            }
+
+            hasWideActions -> {
+                val normalCount = row.keys.count {
+                    it.type != KeyType.SHIFT && it.type != KeyType.BACKSPACE
+                }.coerceAtLeast(1)
+                val fixed = row.keys.sumOf { key ->
+                    when (key.type) {
+                        KeyType.SHIFT -> SHIFT_KEY_WIDTH_DP * density
+                        KeyType.BACKSPACE -> BACKSPACE_KEY_WIDTH_DP * density
+                        else -> 0f
+                    }.toDouble()
+                }.toFloat()
+                val normalWidth = (
+                    width - fixed - gap * (count - 1)
+                ) / normalCount
+                row.keys.forEachIndexed { index, key ->
+                    widths[index] = when (key.type) {
+                        KeyType.SHIFT -> SHIFT_KEY_WIDTH_DP * density
+                        KeyType.BACKSPACE -> BACKSPACE_KEY_WIDTH_DP * density
+                        else -> normalWidth
+                    }
+                }
+            }
+
+            rowIndex == 1 -> {
+                // The A–L row is intentionally centered. At the 360dp baseline this produces
+                // roughly 22dp of side inset and 31dp normal keys.
+                val preferredInset = SECOND_ROW_INSET_DP * density
+                val normalWidthAtInset = (
+                    width - preferredInset * 2f - gap * (count - 1)
+                ) / count
+                val inset = if (normalWidthAtInset > 0f) preferredInset else 0f
+                val normalWidth = (
+                    width - inset * 2f - gap * (count - 1)
+                ) / count
+                for (index in widths.indices) widths[index] = normalWidth
+            }
+
+            else -> {
+                val normalWidth = (width - gap * (count - 1)) / count
+                for (index in widths.indices) widths[index] = normalWidth
+            }
+        }
+
+        val totalWidth = widths.sum() + gap * (count - 1)
+        val start = when {
+            rowIndex == 1 && totalWidth < width -> SECOND_ROW_INSET_DP * density
+            else -> ((width - totalWidth) / 2f).coerceAtLeast(0f)
+        }
+        var cursor = start
+        for (index in widths.indices) {
+            result[index * 2] = cursor
+            result[index * 2 + 1] = cursor + widths[index]
+            cursor += widths[index] + gap
+        }
+        return result
     }
 
     private fun updateGlidePath(x: Float, y: Float) {
@@ -598,8 +724,20 @@ class KeyboardView(
         const val SPACE_CURSOR_STEP_DP = 14f
         const val KEY_INSET_DP = 2f
         const val CORNER_RADIUS_DP = 6f
-        const val LETTER_TEXT_SIZE_DP = 21f
-        const val ACTION_TEXT_SIZE_DP = 14f
+        const val NORMAL_KEY_WIDTH_DP = 31f
+        const val NORMAL_KEY_HEIGHT_DP = 47f
+        const val BOTTOM_ROW_HEIGHT_DP = 50f
+        const val SHIFT_KEY_WIDTH_DP = 48f
+        const val BACKSPACE_KEY_WIDTH_DP = 49f
+        const val SPACE_KEY_WIDTH_DP = 138f
+        const val ACTION_KEY_WIDTH_DP = 49f
+        const val HORIZONTAL_GAP_DP = 5f
+        const val ROW_GAP_DP = 8f
+        const val SECOND_ROW_INSET_DP = 22f
+        const val MAIN_KEY_TEXT_SIZE_SP = 29f
+        const val ACTION_TEXT_SIZE_SP = 28f
+        const val MODE_LABEL_TEXT_SIZE_SP = 19f
+        const val SPACE_LABEL_TEXT_SIZE_SP = 20f
         val BACKGROUND_COLOR = Color.rgb(243, 244, 246)
         val KEY_COLOR = Color.WHITE
         val SPECIAL_KEY_COLOR = Color.rgb(221, 227, 244)
