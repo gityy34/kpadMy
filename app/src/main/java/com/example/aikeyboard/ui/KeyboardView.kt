@@ -13,6 +13,10 @@ import com.example.aikeyboard.core.KeyType
 import com.example.aikeyboard.core.KeyboardLayout
 import com.example.aikeyboard.core.KeyboardLayoutProvider
 import com.example.aikeyboard.core.KeyboardState
+import com.example.aikeyboard.glide.GlideGesture
+import com.example.aikeyboard.glide.GlideKeyGeometry
+import com.example.aikeyboard.glide.GlidePathBuffer
+import kotlin.math.hypot
 import kotlin.math.roundToInt
 
 /**
@@ -24,6 +28,10 @@ class KeyboardView(
     private val layoutProvider: KeyboardLayoutProvider,
     private val state: KeyboardState,
     private val onKeyPressed: (KeySpec) -> Unit,
+    private val glideEnabled: () -> Boolean = { false },
+    private val onGlideStarted: () -> Unit = {},
+    private val onGlideCompleted: (GlideGesture) -> Unit = {},
+    private val onGlideCancelled: (GlideGesture) -> Unit = {},
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -37,6 +45,14 @@ class KeyboardView(
         typeface = android.graphics.Typeface.create("sans", android.graphics.Typeface.NORMAL)
     }
     private val touchTracker = TouchTracker()
+    private val glidePath = GlidePathBuffer()
+    private val trailPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = GLIDE_TRAIL_COLOR
+        style = Paint.Style.STROKE
+        strokeWidth = GLIDE_TRAIL_WIDTH_DP * density
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
     private val repeatHandler = Handler(Looper.getMainLooper())
     private val repeatRunnable = object : Runnable {
         override fun run() {
@@ -59,6 +75,13 @@ class KeyboardView(
     private var pressedRow = -1
     private var pressedColumn = -1
     private var backspaceRepeatCount = 0
+    private var glideGeometry: List<GlideKeyGeometry> = emptyList()
+    private var glideEligible = false
+    private var glideActive = false
+    private var glideDistance = 0f
+    private var lastGlideX = 0f
+    private var lastGlideY = 0f
+    private var glideProvisionalText = ""
 
     init {
         isFocusable = true
@@ -91,6 +114,7 @@ class KeyboardView(
         }
 
         canvas.drawColor(BACKGROUND_COLOR)
+        drawGlideTrail(canvas)
         val shifted = state.shiftActive()
         for (rowIndex in keyboardLayout.rows.indices) {
             val row = keyboardLayout.rows[rowIndex]
@@ -138,6 +162,14 @@ class KeyboardView(
                 val hit = findKey(event.x, event.y)
                 touchTracker.start(event.getPointerId(0), hit)
                 if (hit != null) {
+                    if (glideEnabled() && isGlideKey(hit)) {
+                        glideEligible = true
+                        glideProvisionalText = hit.textFor(state.shiftActive())
+                        glidePath.add(event.x, event.y)
+                        lastGlideX = event.x
+                        lastGlideY = event.y
+                        onGlideStarted()
+                    }
                     // Schedule the visual pressed state before calling into InputConnection.
                     // The text commit is still synchronous and happens in this same event.
                     invalidate()
@@ -165,12 +197,16 @@ class KeyboardView(
                     event.findPointerIndex(touchTracker.activePointerId) < 0
                 ) {
                     clearPressedState()
+                } else if (glideEligible) {
+                    val index = event.findPointerIndex(touchTracker.activePointerId)
+                    if (index >= 0) updateGlidePath(event.getX(index), event.getY(index))
                 }
                 return true
             }
 
             MotionEvent.ACTION_POINTER_UP -> {
                 if (touchTracker.owns(event.getPointerId(event.actionIndex))) {
+                    if (glideActive) notifyGlideCancelled()
                     clearPressedState()
                 }
                 return true
@@ -178,6 +214,7 @@ class KeyboardView(
 
             MotionEvent.ACTION_UP -> {
                 if (touchTracker.owns(event.getPointerId(event.actionIndex))) {
+                    if (glideActive) notifyGlideCompleted()
                     clearPressedState()
                     performClick()
                 }
@@ -185,6 +222,7 @@ class KeyboardView(
             }
 
             MotionEvent.ACTION_CANCEL -> {
+                if (glideActive) notifyGlideCancelled()
                 clearPressedState()
                 return true
             }
@@ -200,6 +238,8 @@ class KeyboardView(
     fun cancelPendingInput() {
         clearPressedState()
     }
+
+    fun currentGlideGeometry(): List<GlideKeyGeometry> = glideGeometry
 
     override fun onDetachedFromWindow() {
         clearPressedState()
@@ -239,6 +279,71 @@ class KeyboardView(
                 metrics.right[column] = if (column == row.keys.lastIndex) width.toFloat() else cursor
             }
         }
+        val geometry = ArrayList<GlideKeyGeometry>()
+        for (rowIndex in keyboardLayout.rows.indices) {
+            val row = keyboardLayout.rows[rowIndex]
+            val metrics = rowMetrics[rowIndex]
+            for (column in row.keys.indices) {
+                geometry += GlideKeyGeometry(
+                    key = row.keys[column],
+                    left = metrics.left[column],
+                    top = metrics.top,
+                    right = metrics.right[column],
+                    bottom = metrics.bottom,
+                )
+            }
+        }
+        glideGeometry = geometry
+    }
+
+    private fun updateGlidePath(x: Float, y: Float) {
+        val distance = hypot(x - lastGlideX, y - lastGlideY)
+        if (distance < GLIDE_SAMPLE_DISTANCE_PX * density) return
+        glideDistance += distance
+        lastGlideX = x
+        lastGlideY = y
+        glidePath.add(x, y)
+        if (!glideActive && glideDistance >= GLIDE_START_DISTANCE_PX * density &&
+            distinctGlideKeyCount() >= 2
+        ) {
+            glideActive = true
+        }
+        if (glideActive) invalidate()
+    }
+
+    private fun distinctGlideKeyCount(): Int {
+        var count = 0
+        var previous: KeySpec? = null
+        for (index in 0 until glidePath.size) {
+            val current = keyAt(glidePath.pointAt(index).x, glidePath.pointAt(index).y)
+            if (current != null && current !== previous && isGlideKey(current)) {
+                count++
+                previous = current
+            }
+        }
+        return count
+    }
+
+    private fun drawGlideTrail(canvas: Canvas) {
+        if (!glideActive || glidePath.size < 2) return
+        var previous = glidePath.pointAt(0)
+        for (index in 1 until glidePath.size) {
+            val current = glidePath.pointAt(index)
+            canvas.drawLine(previous.x, previous.y, current.x, current.y, trailPaint)
+            previous = current
+        }
+    }
+
+    private fun notifyGlideCompleted() {
+        onGlideCompleted(
+            GlideGesture(glidePath.toList(), state.language, glideProvisionalText),
+        )
+    }
+
+    private fun notifyGlideCancelled() {
+        onGlideCancelled(
+            GlideGesture(glidePath.toList(), state.language, glideProvisionalText),
+        )
     }
 
     private fun findKey(x: Float, y: Float): KeySpec? {
@@ -271,12 +376,31 @@ class KeyboardView(
         return null
     }
 
+    private fun keyAt(x: Float, y: Float): KeySpec? {
+        val touchX = x.coerceIn(0f, width.toFloat())
+        val touchY = y.coerceIn(0f, height.toFloat())
+        for (geometry in glideGeometry) {
+            if (touchX >= geometry.left && touchX <= geometry.right &&
+                touchY >= geometry.top && touchY <= geometry.bottom
+            ) return geometry.key
+        }
+        return null
+    }
+
+    private fun isGlideKey(key: KeySpec): Boolean =
+        key.type == KeyType.CHARACTER && key.outputText.any { it.isLetterOrDigit() }
+
     private fun clearPressedState() {
         repeatHandler.removeCallbacks(repeatRunnable)
         backspaceRepeatCount = 0
         touchTracker.cancel()
         pressedRow = -1
         pressedColumn = -1
+        glidePath.clear()
+        glideEligible = false
+        glideActive = false
+        glideDistance = 0f
+        glideProvisionalText = ""
         invalidate()
     }
 
@@ -310,6 +434,10 @@ class KeyboardView(
         val SPECIAL_KEY_COLOR = Color.rgb(221, 227, 244)
         val PRESSED_KEY_COLOR = Color.rgb(215, 224, 255)
         val SHIFT_ACTIVE_COLOR = Color.rgb(190, 204, 255)
+        val GLIDE_TRAIL_COLOR = Color.rgb(83, 111, 220)
+        const val GLIDE_TRAIL_WIDTH_DP = 3f
+        const val GLIDE_SAMPLE_DISTANCE_PX = 5f
+        const val GLIDE_START_DISTANCE_PX = 14f
         val TEXT_COLOR = Color.rgb(32, 33, 36)
     }
 }
