@@ -281,19 +281,30 @@ class KeyboardToolbarView(
         }
         iconStrokePaint.color = theme.textColor
         val centerY = height / 2f
-        val capsuleWidth = 8f * density
-        val capsuleTop = centerY - 12f * density
+        val capsuleWidth = 7f * density
+        val capsuleTop = centerY - 13f * density
         val capsuleBottom = centerY + 3f * density
-        canvas.drawRoundRect(centerX - capsuleWidth, capsuleTop, centerX + capsuleWidth,
-            capsuleBottom, capsuleWidth, capsuleWidth, iconStrokePaint)
+        iconStrokePaint.style = Paint.Style.FILL
+        canvas.drawRoundRect(
+            centerX - capsuleWidth,
+            capsuleTop,
+            centerX + capsuleWidth,
+            capsuleBottom,
+            capsuleWidth,
+            capsuleWidth,
+            iconStrokePaint,
+        )
+        iconStrokePaint.style = Paint.Style.STROKE
+        iconStrokePaint.strokeWidth = 2.6f * density
         val arcLeft = centerX - 13f * density
         val arcTop = centerY - 5f * density
         val arcRight = centerX + 13f * density
         val arcBottom = centerY + 10f * density
         canvas.drawArc(arcLeft, arcTop, arcRight, arcBottom, 0f, 180f, false, iconStrokePaint)
-        canvas.drawLine(centerX, arcBottom, centerX, centerY + 15f * density, iconStrokePaint)
-        canvas.drawLine(centerX - 7f * density, centerY + 15f * density,
-            centerX + 7f * density, centerY + 15f * density, iconStrokePaint)
+        canvas.drawLine(centerX, arcBottom, centerX, centerY + 16f * density, iconStrokePaint)
+        canvas.drawLine(centerX - 8f * density, centerY + 16f * density,
+            centerX + 8f * density, centerY + 16f * density, iconStrokePaint)
+        iconStrokePaint.strokeWidth = 2.2f * density
     }
 
     private fun drawText(canvas: Canvas, value: String, left: Float, right: Float, rtl: Boolean) {
@@ -304,6 +315,9 @@ class KeyboardToolbarView(
             .setEllipsize(TextUtils.TruncateAt.END)
             .setTextDirection(direction).build()
         canvas.save()
+        // The center cells are a hard visual boundary. This prevents long LTR/RTL labels from
+        // ever drawing over the permanently reserved Tools and microphone cells.
+        canvas.clipRect(left, 0f, right, height.toFloat())
         canvas.translate(left + 8f * density, ((height - layout.height) / 2f).coerceAtLeast(0f))
         layout.draw(canvas)
         canvas.restore()
