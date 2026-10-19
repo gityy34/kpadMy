@@ -7,6 +7,7 @@ on:
       - phase-1-ime-foundation
       - phase-1-touch-response
       - 'release-v*'
+      - fix-v9-small-reliability
   pull_request:
     branches:
       - main
