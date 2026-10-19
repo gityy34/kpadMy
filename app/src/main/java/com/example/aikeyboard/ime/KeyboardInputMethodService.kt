@@ -143,7 +143,7 @@ class KeyboardInputMethodService : InputMethodService() {
         val toolbar = KeyboardToolbarView(
             context = this,
             initialOrder = keyboardSettings.toolbarOrder(),
-            onTools = ::showTools,
+            onTools = ::onToolsPressed,
             onMic = ::showVoice,
             onToolbarAction = ::onToolbarAction,
             onCandidateSelected = ::onSuggestionSelected,
@@ -682,6 +682,7 @@ class KeyboardInputMethodService : InputMethodService() {
         toolsPanel = null
         refreshTheme()
         toolbarView?.showToolbarActions()
+        toolbarView?.setClosePanelMode(false)
         val container = contentContainer ?: return
         container.removeAllViews()
         keyboardView?.let { view ->
@@ -704,6 +705,7 @@ class KeyboardInputMethodService : InputMethodService() {
         contentMode = ContentMode.TOOLS
         clearSuggestions()
         toolbarView?.showToolbarActions()
+        toolbarView?.setClosePanelMode(true)
         contentContainer?.let { container ->
             container.removeAllViews()
             val tools = ToolsPanelView(
@@ -723,6 +725,14 @@ class KeyboardInputMethodService : InputMethodService() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ))
+        }
+    }
+
+    private fun onToolsPressed() {
+        if (contentMode == ContentMode.TOOLS || toolbarView?.isClosePanelMode() == true) {
+            setKeyboardContent()
+        } else {
+            showTools()
         }
     }
 
