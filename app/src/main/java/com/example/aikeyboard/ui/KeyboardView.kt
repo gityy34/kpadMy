@@ -37,6 +37,8 @@ class KeyboardView(
     private val onGlideCompleted: (GlideGesture) -> Unit = {},
     private val onGlideCancelled: (GlideGesture) -> Unit = {},
     private val onSpaceLongPressed: () -> Unit = {},
+    private val onSpaceCursorStarted: () -> Boolean = { false },
+    private val onSpaceCursorMoved: (Int) -> Unit = {},
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -87,6 +89,7 @@ class KeyboardView(
         ) return@Runnable
 
         spaceLongPressTriggered = true
+        spaceCommitted = false
         onSpaceLongPressed()
     }
 
@@ -97,6 +100,10 @@ class KeyboardView(
     private var backspaceRepeatCount = 0
     private var spaceCommitted = false
     private var spaceLongPressTriggered = false
+    private var spaceCursorActive = false
+    private var spaceLastX = 0f
+    private var spaceStartY = 0f
+    private var spaceAccumulatedDelta = 0f
     private var glideGeometry: List<GlideKeyGeometry> = emptyList()
     private var glideEligible = false
     private var glideActive = false
@@ -230,6 +237,9 @@ class KeyboardView(
                     invalidate()
                     if (hit.type == KeyType.SPACE && committed) {
                         spaceCommitted = true
+                        spaceLastX = event.x
+                        spaceStartY = event.y
+                        spaceAccumulatedDelta = 0f
                         repeatHandler.postDelayed(spaceLongPressRunnable, SPACE_LONG_PRESS_DELAY_MS)
                     }
                     if (hit.type == KeyType.BACKSPACE) {
@@ -252,6 +262,9 @@ class KeyboardView(
                     event.findPointerIndex(touchTracker.activePointerId) < 0
                 ) {
                     clearPressedState()
+                } else if (spaceCommitted || spaceCursorActive) {
+                    val index = event.findPointerIndex(touchTracker.activePointerId)
+                    if (index >= 0) updateSpaceCursor(event.getX(index), event.getY(index))
                 } else if (glideEligible) {
                     val index = event.findPointerIndex(touchTracker.activePointerId)
                     if (index >= 0) updateGlidePath(event.getX(index), event.getY(index))
@@ -453,6 +466,10 @@ class KeyboardView(
         backspaceRepeatCount = 0
         spaceCommitted = false
         spaceLongPressTriggered = false
+        spaceCursorActive = false
+        spaceLastX = 0f
+        spaceStartY = 0f
+        spaceAccumulatedDelta = 0f
         touchTracker.cancel()
         pressedRow = -1
         pressedColumn = -1
@@ -471,6 +488,31 @@ class KeyboardView(
         else -> BACKSPACE_REPEAT_MIN_INTERVAL_MS
     }
 
+    private fun updateSpaceCursor(x: Float, y: Float) {
+        if (!spaceCursorActive) {
+            val horizontalDistance = kotlin.math.abs(x - spaceLastX)
+            val verticalDistance = kotlin.math.abs(y - spaceStartY)
+            if (horizontalDistance < SPACE_CURSOR_START_DISTANCE_DP * density ||
+                horizontalDistance < verticalDistance
+            ) return
+            repeatHandler.removeCallbacks(spaceLongPressRunnable)
+            if (!onSpaceCursorStarted()) return
+            spaceCursorActive = true
+            spaceCommitted = false
+            spaceAccumulatedDelta = 0f
+        }
+
+        val delta = x - spaceLastX
+        spaceLastX = x
+        spaceAccumulatedDelta += delta
+        val step = SPACE_CURSOR_STEP_DP * density
+        while (kotlin.math.abs(spaceAccumulatedDelta) >= step) {
+            val direction = if (spaceAccumulatedDelta > 0f) 1 else -1
+            onSpaceCursorMoved(direction)
+            spaceAccumulatedDelta -= direction * step
+        }
+    }
+
     private class RowMetrics(val keyCount: Int) {
         var top = 0f
         var bottom = 0f
@@ -486,6 +528,8 @@ class KeyboardView(
         const val BACKSPACE_REPEAT_FAST_INTERVAL_MS = 42L
         const val BACKSPACE_REPEAT_MIN_INTERVAL_MS = 30L
         const val SPACE_LONG_PRESS_DELAY_MS = 2_000L
+        const val SPACE_CURSOR_START_DISTANCE_DP = 18f
+        const val SPACE_CURSOR_STEP_DP = 14f
         const val KEY_INSET_DP = 2f
         const val CORNER_RADIUS_DP = 6f
         const val LETTER_TEXT_SIZE_DP = 21f
