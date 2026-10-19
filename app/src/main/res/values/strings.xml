@@ -10,4 +10,8 @@
     <string name="glide_typing">Glide typing</string>
     <string name="clear_personal_data">Clear learned words / personal typing data</string>
     <string name="clear_personal_data_confirmation">Remove all privately learned words and ranking data?</string>
+    <string name="search_settings">Search settings</string>
+    <string name="reset_toolbar_layout">Reset Toolbar Layout</string>
+    <string name="toolbar_layout_reset">Toolbar layout reset</string>
+    <string name="no_settings_found">No matching settings</string>
 </resources>
