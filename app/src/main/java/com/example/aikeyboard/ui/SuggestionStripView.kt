@@ -27,12 +27,13 @@ class SuggestionStripView(
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
+    private val scaledDensity = resources.displayMetrics.scaledDensity
     private val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = DIVIDER_COLOR }
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = BACKGROUND_COLOR }
     private val pressedPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = PRESSED_COLOR }
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = TEXT_COLOR
-        textSize = TEXT_SIZE_DP * density
+        textSize = TEXT_SIZE_SP * scaledDensity
         typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
     }
 
@@ -204,8 +205,8 @@ class SuggestionStripView(
     private companion object {
         const val DEFAULT_SLOT_COUNT = 3
         // Keep the strip stable and close to a normal Gboard-sized candidate row.
-        const val DEFAULT_HEIGHT_DP = 56
-        const val TEXT_SIZE_DP = 20f
+        const val DEFAULT_HEIGHT_DP = 48
+        const val TEXT_SIZE_SP = 23f
         const val DIVIDER_WIDTH_DP = 1f
         const val INVALID_POINTER_ID = -1
         const val LONG_PRESS_MILLIS = 800L
