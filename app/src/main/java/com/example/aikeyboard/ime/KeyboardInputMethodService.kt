@@ -41,6 +41,12 @@ import com.example.aikeyboard.theme.ThemeActivity
 import com.example.aikeyboard.theme.ThemeStore
 import com.example.aikeyboard.emoji.EmojiPanelView
 import com.example.aikeyboard.emoji.EmojiUsageStore
+import com.example.aikeyboard.voice.SpeechLanguage
+import com.example.aikeyboard.voice.TranslationTarget
+import com.example.aikeyboard.voice.VoiceController
+import com.example.aikeyboard.voice.VoicePanelView
+import com.example.aikeyboard.voice.VoiceEvent
+import com.example.aikeyboard.voice.VoicePermissionActivity
 import com.example.aikeyboard.ui.KeyboardToolbarView
 import com.example.aikeyboard.ui.KeyboardView
 import com.example.aikeyboard.ui.ResizePanelView
@@ -68,6 +74,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var rootView: LinearLayout? = null
     private var contentMode = ContentMode.KEYBOARD
     private var resizePanel: ResizePanelView? = null
+    private var voiceController: VoiceController? = null
     private var safeAreaView: View? = null
     private var heightBeforeResizeDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -121,7 +128,7 @@ class KeyboardInputMethodService : InputMethodService() {
             context = this,
             initialOrder = keyboardSettings.toolbarOrder(),
             onTools = ::showTools,
-            onMic = {},
+            onMic = ::showVoice,
             onToolbarAction = ::onToolbarAction,
             onCandidateSelected = ::onSuggestionSelected,
             onCandidateLongPressed = ::onSuggestionLongPressed,
@@ -248,6 +255,8 @@ class KeyboardInputMethodService : InputMethodService() {
         contentContainer = null
         rootView = null
         resizePanel = null
+        voiceController?.close()
+        voiceController = null
         runCatching { unregisterReceiver(themeReceiver) }
         predictionController.close()
         glideController.close()
@@ -368,6 +377,8 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun setKeyboardContent() {
+        voiceController?.close()
+        voiceController = null
         contentMode = ContentMode.KEYBOARD
         resizePanel = null
         refreshTheme()
@@ -474,6 +485,45 @@ class KeyboardInputMethodService : InputMethodService() {
         ))
     }
 
+    private fun showVoice() {
+        contentMode = ContentMode.VOICE
+        clearSuggestions()
+        toolbarView?.setToolsMode(true)
+        val container = contentContainer ?: return
+        container.removeAllViews()
+        var panel: VoicePanelView? = null
+        val controller = VoiceController(this, onEvent = { event ->
+            mainHandler.post { panel?.handle(event) }
+        })
+        val voicePanel = VoicePanelView(
+            context = this,
+            onStart = { language ->
+                if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
+                    android.content.pm.PackageManager.PERMISSION_GRANTED
+                ) {
+                    startActivity(Intent(this, VoicePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                } else controller.start(language)
+            },
+            onPause = controller::pause,
+            onResume = controller::resume,
+            onStop = controller::stop,
+            onCancel = controller::cancel,
+            onTranslate = controller::translate,
+            onInsert = { text ->
+                currentInputConnection?.commitText(text, 1)
+                requestCompositionSnapshot()
+            },
+            onBack = ::setKeyboardContent,
+        )
+        voicePanel.applyTheme(activeTheme)
+        panel = voicePanel
+        voiceController = controller
+        container.addView(voicePanel, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
+    }
+
     private fun showResize() {
         contentMode = ContentMode.RESIZE
         clearSuggestions()
@@ -540,7 +590,7 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private enum class ContentMode { KEYBOARD, TOOLS, RESIZE, EMOJI }
+    private enum class ContentMode { KEYBOARD, TOOLS, RESIZE, EMOJI, VOICE }
 
     private companion object {
         const val TOOLBAR_HEIGHT_DP = 56
