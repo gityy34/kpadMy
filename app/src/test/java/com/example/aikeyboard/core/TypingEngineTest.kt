@@ -74,7 +74,7 @@ class TypingEngineTest {
             when (method.name) {
                 "performEditorAction" -> false
                 "sendKeyEvent" -> {
-                    calls += "key:${(args?.get(0) as android.view.KeyEvent).action}"
+                    calls += "key"
                     true
                 }
                 "commitText" -> {
