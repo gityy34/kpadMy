@@ -492,9 +492,9 @@ class KeyboardInputMethodService : InputMethodService() {
         val container = contentContainer ?: return
         container.removeAllViews()
         var panel: VoicePanelView? = null
-        val controller = VoiceController(this) { event ->
+        val controller = VoiceController(this, onEvent = { event ->
             mainHandler.post { panel?.handle(event) }
-        }
+        })
         val voicePanel = VoicePanelView(
             context = this,
             onStart = { language ->
