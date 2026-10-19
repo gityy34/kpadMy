@@ -2,12 +2,16 @@ package com.example.aikeyboard.prediction
 
 import com.example.aikeyboard.core.CompositionSnapshot
 import com.example.aikeyboard.core.KeyboardLanguage
+import com.example.aikeyboard.learning.EmptyPersonalVocabulary
+import com.example.aikeyboard.learning.PersonalVocabularySource
+import com.example.aikeyboard.learning.PersonalWord
 import java.util.Locale
 import kotlin.math.max
 
 /** Local, bounded prediction implementation. It has no network, database, or user-learning path. */
 class LocalPredictionEngine(
     private val lexicon: LocalLexicon = LocalLexicon(),
+    private val personalVocabulary: PersonalVocabularySource = EmptyPersonalVocabulary,
 ) : PredictionEngine {
 
     override fun predict(snapshot: CompositionSnapshot): List<SuggestionCandidate> {
@@ -34,6 +38,7 @@ class LocalPredictionEngine(
         context: List<String>,
     ): List<SuggestionCandidate> {
         val result = ArrayList<SuggestionCandidate>(12)
+        val personalWords = personalVocabulary.snapshot()
         val queryLanguage = languageOf(query, snapshot.activeLanguage)
         result += SuggestionCandidate(
             text = query,
@@ -79,6 +84,7 @@ class LocalPredictionEngine(
                 )
             }
         }
+        addPersonalWordCandidates(result, snapshot, query, context, personalWords)
         return result
     }
 
@@ -87,6 +93,7 @@ class LocalPredictionEngine(
         context: List<String>,
     ): List<SuggestionCandidate> {
         val result = ArrayList<SuggestionCandidate>(8)
+        val personalWords = personalVocabulary.snapshot()
         val preferred = preferredLanguages(snapshot, "")
         val nextWords = lexicon.nextWords(context)
         val fallback = if (nextWords.isNotEmpty()) nextWords else {
@@ -114,7 +121,64 @@ class LocalPredictionEngine(
                 kind = SuggestionKind.NEXT_WORD,
             )
         }
+        addPersonalNextWordCandidates(result, snapshot, context, personalWords)
         return result
+    }
+
+    private fun addPersonalWordCandidates(
+        result: MutableList<SuggestionCandidate>,
+        snapshot: CompositionSnapshot,
+        query: String,
+        context: List<String>,
+        personalWords: List<PersonalWord>,
+    ) {
+        if (personalWords.isEmpty()) return
+        val preferred = preferredLanguages(snapshot, query)
+        for (word in personalWords) {
+            val languageRank = preferred.indexOf(word.language)
+            if (languageRank < 0) continue
+            val queryForm = formFor(word.language, query)
+            val wordForm = formFor(word.language, word.displayText)
+            val prefix = wordForm.startsWith(queryForm)
+            val distance = if (prefix) 0 else editDistance(queryForm, wordForm, MAX_EDIT_DISTANCE + 1)
+            if (!prefix && distance > MAX_EDIT_DISTANCE) continue
+            val contextBoost = if (contextKey(context) == word.contextKey) PERSONAL_CONTEXT_SCORE else 0
+            val kind = if (prefix) SuggestionKind.COMPLETION else SuggestionKind.CORRECTION
+            result += SuggestionCandidate(
+                text = word.displayText,
+                language = word.language,
+                score = personalScore(word) +
+                    (preferred.size - languageRank) * LANGUAGE_SCORE +
+                    (if (prefix) queryForm.length * PREFIX_CHARACTER_SCORE else
+                        (MAX_EDIT_DISTANCE - distance) * EDIT_DISTANCE_SCORE) + contextBoost,
+                kind = kind,
+                isPersonal = true,
+            )
+        }
+    }
+
+    private fun addPersonalNextWordCandidates(
+        result: MutableList<SuggestionCandidate>,
+        snapshot: CompositionSnapshot,
+        context: List<String>,
+        personalWords: List<PersonalWord>,
+    ) {
+        if (personalWords.isEmpty() || context.isEmpty()) return
+        val preferred = preferredLanguages(snapshot, "")
+        val key = contextKey(context)
+        for (word in personalWords) {
+            if (word.contextKey != key) continue
+            val languageRank = preferred.indexOf(word.language)
+            if (languageRank < 0) continue
+            result += SuggestionCandidate(
+                text = word.displayText,
+                language = word.language,
+                score = NEXT_WORD_SCORE + personalScore(word) +
+                    (preferred.size - languageRank) * LANGUAGE_SCORE + PERSONAL_CONTEXT_SCORE,
+                kind = SuggestionKind.NEXT_WORD,
+                isPersonal = true,
+            )
+        }
     }
 
     private fun preferredLanguages(
@@ -208,6 +272,17 @@ class LocalPredictionEngine(
         else -> value.lowercase(Locale.ROOT)
     }
 
+    private fun personalScore(word: PersonalWord): Int {
+        val ageDays = ((System.currentTimeMillis() - word.lastUsedMillis).coerceAtLeast(0L) /
+            MILLIS_PER_DAY).toInt()
+        val recency = (RECENCY_SCORE - ageDays).coerceAtLeast(0)
+        return word.confidence * CONFIDENCE_SCORE +
+            word.frequency.coerceAtMost(MAX_PERSONAL_FREQUENCY) * FREQUENCY_SCORE + recency
+    }
+
+    private fun contextKey(words: List<String>): String =
+        words.takeLast(MAX_CONTEXT_WORDS).joinToString(" ") { it.lowercase(Locale.ROOT) }
+
     private fun frequencyScore(frequency: Int): Int = max(1, frequency / 100)
 
     private fun editDistance(left: String, right: String, limit: Int): Int {
@@ -267,5 +342,11 @@ class LocalPredictionEngine(
         const val EDIT_DISTANCE_SCORE = 1_200
         const val LANGUAGE_SCORE = 400
         const val CONTEXT_SCORE = 1_000
+        const val PERSONAL_CONTEXT_SCORE = 3_000
+        const val CONFIDENCE_SCORE = 40
+        const val FREQUENCY_SCORE = 10
+        const val RECENCY_SCORE = 200
+        const val MAX_PERSONAL_FREQUENCY = 100
+        const val MILLIS_PER_DAY = 86_400_000L
     }
 }

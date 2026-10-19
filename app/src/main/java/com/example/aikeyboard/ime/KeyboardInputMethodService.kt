@@ -11,6 +11,12 @@ import com.example.aikeyboard.core.CompositionSnapshot
 import com.example.aikeyboard.core.DefaultKeyboardLayoutProvider
 import com.example.aikeyboard.core.KeyboardState
 import com.example.aikeyboard.core.TypingEngine
+import com.example.aikeyboard.core.KeySpec
+import com.example.aikeyboard.core.KeyType
+import com.example.aikeyboard.learning.LearningCommitReason
+import com.example.aikeyboard.learning.PersonalLearningController
+import com.example.aikeyboard.learning.PersonalVocabularyStore
+import com.example.aikeyboard.prediction.LocalPredictionEngine
 import com.example.aikeyboard.prediction.PredictionController
 import com.example.aikeyboard.prediction.SuggestionCandidate
 import com.example.aikeyboard.prediction.SuggestionSelectionEngine
@@ -26,6 +32,8 @@ class KeyboardInputMethodService : InputMethodService() {
     private lateinit var typingEngine: TypingEngine
     private lateinit var compositionController: CompositionController
     private lateinit var predictionController: PredictionController
+    private lateinit var learningController: PersonalLearningController
+    private lateinit var keyboardSettings: SharedPreferencesKeyboardSettings
     private var keyboardView: KeyboardView? = null
     private var suggestionStripView: SuggestionStripView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
@@ -35,15 +43,29 @@ class KeyboardInputMethodService : InputMethodService() {
 
     override fun onCreate() {
         super.onCreate()
-        val settings = SharedPreferencesKeyboardSettings(this)
-        keyboardState = KeyboardState(settings.initialKeyboardMode())
+        keyboardSettings = SharedPreferencesKeyboardSettings(this)
+        keyboardState = KeyboardState(keyboardSettings.initialKeyboardMode())
         typingEngine = TypingEngine(keyboardState)
         compositionController = CompositionController()
-        predictionController = PredictionController()
+        val personalVocabulary = PersonalVocabularyStore(
+            context = this,
+            enabled = { keyboardSettings.personalizedSuggestionsEnabled() },
+        )
+        learningController = PersonalLearningController(
+            store = personalVocabulary,
+            enabled = { keyboardSettings.personalizedSuggestionsEnabled() },
+        )
+        predictionController = PredictionController(
+            LocalPredictionEngine(personalVocabulary = personalVocabulary),
+        )
     }
 
     override fun onCreateInputView(): View {
-        val strip = SuggestionStripView(this, onCandidateSelected = ::onSuggestionSelected)
+        val strip = SuggestionStripView(
+            this,
+            onCandidateSelected = ::onSuggestionSelected,
+            onCandidateLongPressed = ::onSuggestionLongPressed,
+        )
         suggestionStripView = strip
 
         val view = KeyboardView(
@@ -53,7 +75,8 @@ class KeyboardInputMethodService : InputMethodService() {
             onKeyPressed = { key ->
                 // InputConnection is read at dispatch time because editors can change without
                 // recreating the IME process.
-                typingEngine.handle(key, currentInputConnection)
+                val committed = typingEngine.handle(key, currentInputConnection)
+                if (committed) recordLearningBoundary(key)
                 // This only schedules a bounded background read after the synchronous commit.
                 // It never sits in front of the key-to-InputConnection path.
                 requestCompositionSnapshot()
@@ -78,6 +101,7 @@ class KeyboardInputMethodService : InputMethodService() {
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
         keyboardState.setEditorInfo(attribute)
+        latestCompositionSnapshot = null
         clearSuggestions()
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
         keyboardView?.invalidate()
@@ -86,8 +110,10 @@ class KeyboardInputMethodService : InputMethodService() {
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
         keyboardState.setEditorInfo(info)
+        latestCompositionSnapshot = null
         clearSuggestions()
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
+        latestCompositionSnapshot = null
         keyboardView?.invalidate()
         requestCompositionSnapshot()
     }
@@ -133,6 +159,7 @@ class KeyboardInputMethodService : InputMethodService() {
         keyboardView = null
         suggestionStripView = null
         predictionController.close()
+        learningController.close()
         compositionController.close()
         super.onDestroy()
     }
@@ -162,10 +189,50 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun onSuggestionSelected(candidate: SuggestionCandidate) {
         val snapshot = latestCompositionSnapshot ?: return
+        learningController.recordAcceptedSuggestion(candidate, snapshot)
         predictionController.clear()
         suggestionStripView?.clearCandidates()
         SuggestionSelectionEngine.apply(currentInputConnection, candidate, snapshot)
         requestCompositionSnapshot()
+    }
+
+    private fun onSuggestionLongPressed(candidate: SuggestionCandidate) {
+        if (!candidate.isPersonal) return
+        val word = learningControllerWord(candidate)
+        learningController.forget(word)
+        predictionController.clear()
+        suggestionStripView?.clearCandidates()
+        requestCompositionSnapshot()
+    }
+
+    private fun learningControllerWord(candidate: SuggestionCandidate) =
+        com.example.aikeyboard.learning.PersonalWord(
+            normalizedWord = com.example.aikeyboard.learning.PersonalLearningPolicy
+                .normalize(candidate.text, candidate.language),
+            displayText = candidate.text,
+            language = candidate.language,
+            frequency = 0,
+            confidence = 0,
+            firstSeenMillis = 0L,
+            lastUsedMillis = 0L,
+        )
+
+    private fun recordLearningBoundary(key: KeySpec) {
+        val reason = when {
+            key.type == KeyType.SPACE -> LearningCommitReason.SPACE
+            key.type == KeyType.ENTER -> LearningCommitReason.ENTER
+            key.type == KeyType.CHARACTER && isBoundaryText(key.outputText) ->
+                LearningCommitReason.PUNCTUATION
+            else -> null
+        } ?: return
+        latestCompositionSnapshot?.let { learningController.recordSnapshot(it, reason) }
+    }
+
+    private fun isBoundaryText(text: String): Boolean {
+        if (text.isEmpty()) return false
+        val codePoint = text.codePointAt(0)
+        return !Character.isLetterOrDigit(codePoint) &&
+            codePoint != '_'.code && codePoint != '\''.code
     }
 
     private fun clearSuggestions() {

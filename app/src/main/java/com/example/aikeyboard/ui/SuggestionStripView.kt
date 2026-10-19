@@ -10,6 +10,8 @@ import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import android.view.MotionEvent
 import android.view.View
+import android.os.Handler
+import android.os.Looper
 import com.example.aikeyboard.prediction.SuggestionCandidate
 import kotlin.math.roundToInt
 
@@ -21,6 +23,7 @@ class SuggestionStripView(
     context: Context,
     private val slotCount: Int = DEFAULT_SLOT_COUNT,
     private val onCandidateSelected: (SuggestionCandidate) -> Unit,
+    private val onCandidateLongPressed: (SuggestionCandidate) -> Unit = {},
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -36,6 +39,16 @@ class SuggestionStripView(
     private var candidates: List<SuggestionCandidate> = emptyList()
     private var activePointerId = INVALID_POINTER_ID
     private var pressedSlot = -1
+    private var longPressTriggered = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        val candidate = candidates.getOrNull(pressedSlot)
+        if (candidate?.isPersonal == true && pressedSlot >= 0) {
+            longPressTriggered = true
+            onCandidateLongPressed(candidate)
+            invalidate()
+        }
+    }
 
     init {
         isClickable = true
@@ -89,6 +102,10 @@ class SuggestionStripView(
                 cancelGesture()
                 activePointerId = event.getPointerId(0)
                 pressedSlot = slotAt(event.x)
+                longPressTriggered = false
+                if (candidates.getOrNull(pressedSlot)?.isPersonal == true) {
+                    mainHandler.postDelayed(longPressRunnable, LONG_PRESS_MILLIS)
+                }
                 invalidate()
                 return true
             }
@@ -102,6 +119,7 @@ class SuggestionStripView(
                 } else {
                     val slot = slotAt(event.getX(index))
                     if (slot != pressedSlot) {
+                        mainHandler.removeCallbacks(longPressRunnable)
                         pressedSlot = -1
                         invalidate()
                     }
@@ -117,7 +135,7 @@ class SuggestionStripView(
             MotionEvent.ACTION_UP -> {
                 val index = event.findPointerIndex(activePointerId)
                 val slot = if (index >= 0) slotAt(event.getX(index)) else -1
-                val candidate = candidates.getOrNull(if (slot == pressedSlot) slot else -1)
+                val candidate = candidates.getOrNull(if (slot == pressedSlot && !longPressTriggered) slot else -1)
                 cancelGesture()
                 if (candidate != null) onCandidateSelected(candidate)
                 performClick()
@@ -176,8 +194,10 @@ class SuggestionStripView(
     }
 
     private fun cancelGesture() {
+        mainHandler.removeCallbacks(longPressRunnable)
         activePointerId = INVALID_POINTER_ID
         pressedSlot = -1
+        longPressTriggered = false
         invalidate()
     }
 
@@ -188,6 +208,7 @@ class SuggestionStripView(
         const val TEXT_SIZE_DP = 18f
         const val DIVIDER_WIDTH_DP = 1f
         const val INVALID_POINTER_ID = -1
+        const val LONG_PRESS_MILLIS = 800L
         val BACKGROUND_COLOR = Color.rgb(248, 249, 251)
         val PRESSED_COLOR = Color.rgb(220, 229, 255)
         val DIVIDER_COLOR = Color.rgb(220, 223, 230)

@@ -20,6 +20,8 @@ data class SuggestionCandidate(
     val language: PredictionLanguage,
     val score: Int,
     val kind: SuggestionKind,
+    /** True when this candidate came from the private personal vocabulary. */
+    val isPersonal: Boolean = false,
 )
 
 data class PredictionResult(
