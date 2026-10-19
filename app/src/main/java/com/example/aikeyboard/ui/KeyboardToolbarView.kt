@@ -315,9 +315,9 @@ class KeyboardToolbarView(
         const val EDGE_TOOLS = -2
         const val EDGE_MIC = -3
         const val EDGE_WIDTH_DP = 56f
-        // Keep suggestions close to the alphabet key label scale. This changes only the text
-        // paint; the fixed toolbar height and touch geometry remain unchanged.
-        const val SUGGESTION_TEXT_SIZE_DP = 28f
+        // Keep suggestions at a clearly readable keyboard-label size. This changes only the
+        // text paint; the fixed toolbar height and touch geometry remain unchanged.
+        const val SUGGESTION_TEXT_SIZE_DP = 34f
         const val LONG_PRESS_MILLIS = 800L
         const val INVALID_POINTER = -1
         val BACKGROUND_COLOR = Color.rgb(248, 249, 251)
