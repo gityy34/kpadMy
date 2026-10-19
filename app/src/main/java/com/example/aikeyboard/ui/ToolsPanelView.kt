@@ -16,6 +16,7 @@ import kotlin.math.abs
 class ToolsPanelView(
     context: Context,
     private val onToolSelected: (String) -> Unit,
+    private val isToolEnabled: (String) -> Boolean = { true },
 ) : View(context) {
     private val density = resources.displayMetrics.density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
@@ -68,15 +69,17 @@ class ToolsPanelView(
         canvas.clipRect(0f, 0f, width.toFloat(), height.toFloat())
         canvas.translate(0f, -scrollOffset)
         items.forEachIndexed { index, item ->
+            val enabled = isToolEnabled(item.first)
             val column = index % 2
             val row = index / 2
             val left = gap + column * (cardWidth + gap)
             val top = gap + row * (cardHeight + gap)
-            card.color = if (index == pressed) theme.pressedKeyColor else theme.keyColor
+            card.color = if (index == pressed && enabled) theme.pressedKeyColor else theme.keyColor
             canvas.drawRoundRect(left, top, left + cardWidth, top + cardHeight, 8f * density, 8f * density, card)
 
             icon.textSize = 18f * density
             icon.textAlign = Paint.Align.CENTER
+            icon.alpha = if (enabled) 255 else 90
             canvas.drawText(
                 item.second.first,
                 left + 25f * density,
@@ -87,6 +90,7 @@ class ToolsPanelView(
             val labelLeft = left + 46f * density
             val labelRight = left + cardWidth - 28f * density
             text.textSize = 15f * density
+            text.alpha = if (enabled) 255 else 100
             canvas.save()
             canvas.clipRect(labelLeft, top, labelRight, top + cardHeight)
             canvas.drawText(
@@ -98,6 +102,7 @@ class ToolsPanelView(
             canvas.restore()
 
             icon.textSize = 22f * density
+            icon.alpha = if (enabled) 255 else 90
             canvas.drawText(
                 "›",
                 left + cardWidth - 15f * density,
@@ -153,7 +158,9 @@ class ToolsPanelView(
             MotionEvent.ACTION_UP -> {
                 val selected = if (!dragging) {
                     val index = indexAt(event.x, event.y)
-                    if (index == pressed) items.getOrNull(index)?.first else null
+                    if (index == pressed && items.getOrNull(index)?.let { isToolEnabled(it.first) } == true) {
+                        items.getOrNull(index)?.first
+                    } else null
                 } else null
                 pressed = -1
                 dragging = false
