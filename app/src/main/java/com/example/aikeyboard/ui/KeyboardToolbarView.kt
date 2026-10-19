@@ -310,6 +310,16 @@ class KeyboardToolbarView(
     private fun drawText(canvas: Canvas, value: String, left: Float, right: Float, rtl: Boolean) {
         val available = (right - left - 16f * density).roundToInt().coerceAtLeast(1)
         val direction = if (rtl) TextDirectionHeuristics.FIRSTSTRONG_RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR
+        // Keep normal suggestions readable. Longer words step down through a few sizes before
+        // ellipsis is used; they never shrink to an unreadable label.
+        val sizes = floatArrayOf(23f, 21f, 19f, 18f)
+        var selectedSize = sizes.last()
+        for (size in sizes) {
+            textPaint.textSize = size * scaledDensity
+            selectedSize = size
+            if (textPaint.measureText(value) <= available.toFloat()) break
+        }
+        textPaint.textSize = selectedSize * scaledDensity
         val layout = StaticLayout.Builder.obtain(value, 0, value.length, textPaint, available)
             .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setMaxLines(1)
             .setEllipsize(TextUtils.TruncateAt.END)
