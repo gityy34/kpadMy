@@ -143,7 +143,19 @@ class GlideEngine(
 
     private fun geometricScore(distance: Int, extracted: String, word: String): Int =
         10_000 - distance * DISTANCE_PENALTY -
-            abs(extracted.length - word.length) * LENGTH_PENALTY
+            abs(extracted.length - word.length) * LENGTH_PENALTY +
+            repeatedLetterBonus(extracted, word)
+
+    private fun repeatedLetterBonus(extracted: String, word: String): Int {
+        val collapsed = buildString(word.length) {
+            var previous = '\u0000'
+            for (character in word.lowercase(Locale.ROOT)) {
+                if (character != previous) append(character)
+                previous = character
+            }
+        }
+        return if (collapsed == extracted.lowercase(Locale.ROOT)) REPEATED_LETTER_BONUS else 0
+    }
 
     private fun personalScore(word: PersonalWord): Int =
         word.confidence * 30 + word.frequency.coerceAtMost(100) * 8
@@ -199,6 +211,7 @@ class GlideEngine(
         const val MAX_CANDIDATES = 4
         const val DISTANCE_PENALTY = 1_600
         const val LENGTH_PENALTY = 180
+        const val REPEATED_LETTER_BONUS = 1_800
         const val LANGUAGE_SCORE = 350
     }
 }
