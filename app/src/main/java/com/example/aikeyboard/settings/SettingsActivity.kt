@@ -39,7 +39,7 @@ class SettingsActivity : Activity() {
         }
         val search = EditText(this).apply {
             hint = getString(R.string.search_settings)
-            singleLine = true
+            setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             setPadding(24, 8, 24, 8)
         }
