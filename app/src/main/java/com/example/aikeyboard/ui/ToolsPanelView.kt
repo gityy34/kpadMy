@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.view.MotionEvent
 import android.view.View
+import com.example.aikeyboard.theme.KeyboardTheme
 
 class ToolsPanelView(
     context: Context,
@@ -23,6 +24,7 @@ class ToolsPanelView(
         textSize = 21f * resources.displayMetrics.density
         textAlign = Paint.Align.CENTER
     }
+    private var theme = KeyboardTheme.SOLID_WHITE
     private val items = listOf(
         "settings" to ("⚙" to "Settings"),
         "search" to ("⌕" to "Search settings"),
@@ -35,6 +37,14 @@ class ToolsPanelView(
     )
     private var pressed = -1
 
+    fun applyTheme(value: KeyboardTheme) {
+        theme = value
+        background.color = value.backgroundColor
+        text.color = value.textColor
+        icon.color = value.accentColor
+        invalidate()
+    }
+
     override fun onDraw(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), background)
         val gap = 8f * resources.displayMetrics.density
@@ -45,7 +55,7 @@ class ToolsPanelView(
             val row = index / 2
             val left = gap + column * (cardWidth + gap)
             val top = gap + row * (cardHeight + gap)
-            card.color = if (index == pressed) Color.rgb(225, 232, 250) else Color.WHITE
+            card.color = if (index == pressed) theme.pressedKeyColor else theme.keyColor
             canvas.drawRoundRect(left, top, left + cardWidth, top + cardHeight, 12f, 12f, card)
             icon.textAlign = Paint.Align.CENTER
             canvas.drawText(item.second.first, left + 28f * resources.displayMetrics.density, top + cardHeight / 2f + 8f, icon)

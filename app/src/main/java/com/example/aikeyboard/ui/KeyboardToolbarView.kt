@@ -13,6 +13,7 @@ import android.text.TextPaint
 import android.view.MotionEvent
 import android.view.View
 import com.example.aikeyboard.prediction.SuggestionCandidate
+import com.example.aikeyboard.theme.KeyboardTheme
 import kotlin.math.roundToInt
 
 /** Fixed-height toolbar: edge actions stay fixed while its center changes to suggestions. */
@@ -41,6 +42,7 @@ class KeyboardToolbarView(
         textSize = 22f * density
         textAlign = Paint.Align.CENTER
     }
+    private var theme = KeyboardTheme.SOLID_WHITE
     private val handler = Handler(Looper.getMainLooper())
     private val longPress = Runnable {
         val item = centerItems.getOrNull(pressedIndex)
@@ -65,6 +67,16 @@ class KeyboardToolbarView(
     init {
         isClickable = true
         setBackgroundColor(BACKGROUND_COLOR)
+    }
+
+    fun applyTheme(value: KeyboardTheme) {
+        theme = value
+        backgroundPaint.color = value.backgroundColor
+        pressedPaint.color = value.pressedKeyColor
+        dividerPaint.color = value.borderColor
+        textPaint.color = value.textColor
+        iconPaint.color = value.textColor
+        invalidate()
     }
 
     fun setCandidates(value: List<SuggestionCandidate>) {
