@@ -31,7 +31,13 @@ class TypingEngine(private val state: KeyboardState) {
 
         return when (key.type) {
             KeyType.CHARACTER -> {
-                val committed = inputConnection.commitText(key.textFor(state.shiftActive()), 1)
+                val text = key.textFor(state.shiftActive())
+                val normalized = if (isTightPunctuation(text)) {
+                    removeSpaceBeforePunctuation(inputConnection)
+                } else {
+                    true
+                }
+                val committed = normalized && inputConnection.commitText(text, 1)
                 if (committed) state.consumeShift()
                 committed
             }
@@ -54,5 +60,25 @@ class TypingEngine(private val state: KeyboardState) {
             if (inputConnection.performEditorAction(action)) return true
         }
         return inputConnection.commitText("\n", 1)
+    }
+
+    private fun removeSpaceBeforePunctuation(inputConnection: InputConnection): Boolean {
+        val before = inputConnection.getTextBeforeCursor(2, 0)?.toString().orEmpty()
+        if (before.isEmpty()) return true
+        val codePoint = before.codePointBefore(before.length)
+        if (!Character.isWhitespace(codePoint) || codePoint == '\n'.code || codePoint == '\r'.code) {
+            return true
+        }
+        val count = Character.charCount(codePoint)
+        return inputConnection.deleteSurroundingText(count, 0)
+    }
+
+    private fun isTightPunctuation(text: String): Boolean {
+        if (text.isEmpty()) return false
+        return when (text.codePointAt(0)) {
+            '.'.code, ','.code, '?'.code, '!'.code, ':'.code, ';'.code,
+            '؟'.code, '۔'.code, '،'.code, ')'.code, ']'.code, '}'.code -> true
+            else -> false
+        }
     }
 }

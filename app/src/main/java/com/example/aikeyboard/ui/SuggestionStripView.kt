@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.text.Layout
 import android.text.StaticLayout
+import android.text.TextUtils
 import android.text.TextDirectionHeuristics
 import android.text.TextPaint
 import android.view.MotionEvent
@@ -176,10 +177,12 @@ class SuggestionStripView(
         ).setAlignment(Layout.Alignment.ALIGN_CENTER)
             .setIncludePad(false)
             .setMaxLines(1)
+            .setEllipsize(TextUtils.TruncateAt.END)
             .setTextDirection(direction)
             .build()
         val top = ((height - layout.height) / 2f).coerceAtLeast(0f)
         canvas.save()
+        canvas.clipRect(left, 0f, right, height.toFloat())
         canvas.translate(left + horizontalPadding, top)
         layout.draw(canvas)
         canvas.restore()
