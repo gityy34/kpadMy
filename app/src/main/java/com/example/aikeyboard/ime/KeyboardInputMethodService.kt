@@ -8,6 +8,7 @@ import android.content.IntentFilter
 import android.graphics.Color
 import android.os.Build
 import android.view.View
+import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.os.Handler
@@ -166,6 +167,8 @@ class KeyboardInputMethodService : InputMethodService() {
             onGlideCompleted = ::onGlideCompleted,
             onGlideCancelled = ::onGlideCancelled,
             onSpaceLongPressed = ::onSpaceLongPressed,
+            onSpaceCursorStarted = ::onSpaceCursorStarted,
+            onSpaceCursorMoved = ::onSpaceCursorMoved,
         )
         keyboardView = view
         view.applyTheme(activeTheme)
@@ -370,6 +373,27 @@ class KeyboardInputMethodService : InputMethodService() {
         requestCompositionSnapshot()
         (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
             ?.showInputMethodPicker()
+    }
+
+    private fun onSpaceCursorStarted(): Boolean {
+        // The normal Space tap commits immediately. Once a horizontal swipe is confirmed,
+        // remove only that Space so the editor-native cursor movement starts at the original
+        // insertion point without changing surrounding text.
+        val deleted = currentInputConnection?.deleteSurroundingText(1, 0) == true
+        if (deleted) {
+            nextWordPredictionRequested = false
+            requestCompositionSnapshot()
+        }
+        return deleted
+    }
+
+    private fun onSpaceCursorMoved(direction: Int) {
+        val connection = currentInputConnection ?: return
+        val keyCode = if (direction > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
+        // Let the active editor perform cursor movement. This preserves its own Unicode,
+        // selection, and grapheme-boundary behavior instead of manually editing UTF-16 text.
+        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
+        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
     }
 
     private fun onSuggestionLongPressed(candidate: SuggestionCandidate) {
