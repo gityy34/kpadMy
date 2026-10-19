@@ -10,6 +10,7 @@ import android.os.Build
 import android.view.View
 import android.view.KeyEvent
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputMethodManager
 import android.os.Handler
 import android.os.Looper
@@ -84,6 +85,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var safeAreaHeightDp = DEFAULT_SAFE_AREA_HEIGHT_DP
     private var heightBeforeResizeDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
     private var nextWordPredictionRequested = false
+    private var backspaceSelection: BackspaceSelection? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val themeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -169,6 +171,10 @@ class KeyboardInputMethodService : InputMethodService() {
             onSpaceLongPressed = ::onSpaceLongPressed,
             onSpaceCursorStarted = ::onSpaceCursorStarted,
             onSpaceCursorMoved = ::onSpaceCursorMoved,
+            onBackspaceSwipeStarted = ::onBackspaceSwipeStarted,
+            onBackspaceSwipeMoved = ::onBackspaceSwipeMoved,
+            onBackspaceSwipeFinished = ::onBackspaceSwipeFinished,
+            onBackspaceSwipeCancelled = ::onBackspaceSwipeCancelled,
         )
         keyboardView = view
         view.applyTheme(activeTheme)
@@ -395,6 +401,88 @@ class KeyboardInputMethodService : InputMethodService() {
         connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
         connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
     }
+
+    private fun onBackspaceSwipeStarted(): Boolean {
+        val connection = currentInputConnection ?: return false
+        if (!connection.getSelectedText(0).isNullOrEmpty()) return false
+
+        val extracted = connection.getExtractedText(ExtractedTextRequest().apply {
+            hintMaxChars = 0
+        }, 0) ?: return false
+        val cursor = extracted.selectionStart
+        if (cursor < 0 || extracted.selectionEnd != cursor) return false
+
+        backspaceSelection = BackspaceSelection(anchor = cursor, start = cursor)
+        return true
+    }
+
+    private fun onBackspaceSwipeMoved() {
+        val selection = backspaceSelection ?: return
+        val connection = currentInputConnection ?: return
+
+        // Temporarily collapse the preview selection so getTextBeforeCursor() is anchored at
+        // the left edge. The selection is restored immediately after finding the prior word.
+        if (!connection.setSelection(selection.start, selection.start)) return
+        val before = connection.getTextBeforeCursor(MAX_BACKSPACE_WORD_CONTEXT, 0)?.toString()
+            ?: return
+        val relativeStart = previousWordStart(before)
+        val distance = before.length - relativeStart
+        if (distance <= 0) return
+
+        val newStart = (selection.start - distance).coerceAtLeast(0)
+        if (newStart >= selection.start) return
+        if (connection.setSelection(newStart, selection.anchor)) {
+            selection.start = newStart
+        }
+    }
+
+    private fun onBackspaceSwipeFinished() {
+        val selection = backspaceSelection ?: return
+        val connection = currentInputConnection
+        if (connection != null && selection.start < selection.anchor) {
+            connection.setSelection(selection.start, selection.anchor)
+            connection.commitText("", 1)
+        }
+        backspaceSelection = null
+        requestCompositionSnapshot()
+    }
+
+    private fun onBackspaceSwipeCancelled() {
+        val selection = backspaceSelection ?: return
+        currentInputConnection?.setSelection(selection.anchor, selection.anchor)
+        backspaceSelection = null
+        requestCompositionSnapshot()
+    }
+
+    private fun previousWordStart(text: String): Int {
+        var index = text.length
+        while (index > 0) {
+            val codePoint = text.codePointBefore(index)
+            if (isWordCodePoint(codePoint)) break
+            index -= Character.charCount(codePoint)
+        }
+        while (index > 0) {
+            val codePoint = text.codePointBefore(index)
+            if (!isWordCodePoint(codePoint)) break
+            index -= Character.charCount(codePoint)
+        }
+        return index
+    }
+
+    private fun isWordCodePoint(codePoint: Int): Boolean {
+        val type = Character.getType(codePoint)
+        return Character.isLetterOrDigit(codePoint) ||
+            type == Character.NON_SPACING_MARK.toInt() ||
+            type == Character.COMBINING_SPACING_MARK.toInt() ||
+            type == Character.ENCLOSING_MARK.toInt() ||
+            codePoint == '_'.code || codePoint == '\''.code ||
+            codePoint == 0x200C || codePoint == 0x200D
+    }
+
+    private data class BackspaceSelection(
+        val anchor: Int,
+        var start: Int,
+    )
 
     private fun onSuggestionLongPressed(candidate: SuggestionCandidate) {
         if (!candidate.isPersonal) return
@@ -760,5 +848,6 @@ class KeyboardInputMethodService : InputMethodService() {
         const val DEFAULT_ENGLISH_ROW_COUNT = 4
         const val MIN_SAFE_AREA_HEIGHT_DP = 48
         const val MIN_GLIDE_CONFIDENCE = 48
+        const val MAX_BACKSPACE_WORD_CONTEXT = 512
     }
 }
