@@ -33,7 +33,7 @@ class SuggestionStripView(
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = TEXT_COLOR
         textSize = TEXT_SIZE_DP * density
-        typeface = android.graphics.Typeface.create("sans", android.graphics.Typeface.NORMAL)
+        typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
     }
 
     private var candidates: List<SuggestionCandidate> = emptyList()
@@ -205,7 +205,7 @@ class SuggestionStripView(
         const val DEFAULT_SLOT_COUNT = 3
         // Keep the strip stable and close to a normal Gboard-sized candidate row.
         const val DEFAULT_HEIGHT_DP = 56
-        const val TEXT_SIZE_DP = 18f
+        const val TEXT_SIZE_DP = 20f
         const val DIVIDER_WIDTH_DP = 1f
         const val INVALID_POINTER_ID = -1
         const val LONG_PRESS_MILLIS = 800L

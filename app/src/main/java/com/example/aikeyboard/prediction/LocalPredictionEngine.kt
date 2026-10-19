@@ -205,6 +205,12 @@ class LocalPredictionEngine(
                 PredictionLanguage.ENGLISH,
             )
 
+            snapshot.activeLanguage == KeyboardLanguage.ROMAN_URDU -> listOf(
+                PredictionLanguage.ROMAN_URDU,
+                PredictionLanguage.ENGLISH,
+                PredictionLanguage.URDU,
+            )
+
             else -> listOf(
                 PredictionLanguage.ENGLISH,
                 PredictionLanguage.ROMAN_URDU,
@@ -215,7 +221,9 @@ class LocalPredictionEngine(
 
     private fun languageOf(text: String, activeLanguage: KeyboardLanguage): PredictionLanguage {
         if (text.any { isUrduCodePoint(it.code) }) return PredictionLanguage.URDU
-        if (activeLanguage == KeyboardLanguage.URDU && text.any { it.isLetter() }) {
+        if ((activeLanguage == KeyboardLanguage.URDU ||
+                activeLanguage == KeyboardLanguage.ROMAN_URDU) && text.any { it.isLetter() }
+        ) {
             return PredictionLanguage.ROMAN_URDU
         }
         return PredictionLanguage.ENGLISH

@@ -18,6 +18,7 @@ import android.widget.LinearLayout
 import com.example.aikeyboard.core.CompositionController
 import com.example.aikeyboard.core.CompositionSnapshot
 import com.example.aikeyboard.core.DefaultKeyboardLayoutProvider
+import com.example.aikeyboard.core.KeyboardLanguage
 import com.example.aikeyboard.core.KeyboardState
 import com.example.aikeyboard.core.TypingEngine
 import com.example.aikeyboard.core.KeySpec
@@ -49,6 +50,7 @@ import com.example.aikeyboard.voice.VoiceEvent
 import com.example.aikeyboard.voice.VoicePermissionActivity
 import com.example.aikeyboard.ui.KeyboardToolbarView
 import com.example.aikeyboard.ui.KeyboardView
+import com.example.aikeyboard.ui.LanguagePanelView
 import com.example.aikeyboard.ui.ResizePanelView
 import com.example.aikeyboard.ui.ToolsPanelView
 
@@ -76,6 +78,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var resizePanel: ResizePanelView? = null
     private var voiceController: VoiceController? = null
     private var safeAreaView: View? = null
+    private var safeAreaHeightDp = DEFAULT_SAFE_AREA_HEIGHT_DP
     private var heightBeforeResizeDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
     private val mainHandler = Handler(Looper.getMainLooper())
     private val themeReceiver = object : BroadcastReceiver() {
@@ -146,6 +149,7 @@ class KeyboardInputMethodService : InputMethodService() {
                 // recreating the IME process.
                 val committed = typingEngine.handle(key, currentInputConnection)
                 if (committed) recordLearningBoundary(key)
+                updateToolbarForKey(key)
                 // This only schedules a bounded background read after the synchronous commit.
                 // It never sits in front of the key-to-InputConnection path.
                 requestCompositionSnapshot()
@@ -176,9 +180,10 @@ class KeyboardInputMethodService : InputMethodService() {
                 safeAreaView = this
                 setBackgroundColor(activeTheme.backgroundColor)
             }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(SAFE_AREA_HEIGHT_DP)
+                LinearLayout.LayoutParams.MATCH_PARENT, dp(safeAreaHeightDp)
             ))
         }
+        updateSafeAreaHeight(keyboardSettings.keyboardHeightDp())
         setKeyboardContent()
         return rootView!!
     }
@@ -190,6 +195,7 @@ class KeyboardInputMethodService : InputMethodService() {
         keyboardState.setEditorInfo(attribute)
         latestCompositionSnapshot = null
         clearSuggestions()
+        toolbarView?.showToolbarActions()
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
         keyboardView?.invalidate()
     }
@@ -201,6 +207,7 @@ class KeyboardInputMethodService : InputMethodService() {
         keyboardState.setEditorInfo(info)
         latestCompositionSnapshot = null
         clearSuggestions()
+        toolbarView?.showToolbarActions()
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
         latestCompositionSnapshot = null
         keyboardView?.invalidate()
@@ -266,8 +273,10 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun requestCompositionSnapshot() {
+        if (contentMode != ContentMode.KEYBOARD) return
         if (keyboardState.editorInputState.isSensitive) {
             clearSuggestions()
+            toolbarView?.showToolbarActions()
             return
         }
         compositionController.requestSnapshot(
@@ -276,10 +285,19 @@ class KeyboardInputMethodService : InputMethodService() {
             activeLanguage = keyboardState.language,
         ) { snapshot ->
             latestCompositionSnapshot = snapshot
+            if (contentMode != ContentMode.KEYBOARD) return@requestSnapshot
+            if (snapshot.currentWord.isEmpty()) {
+                predictionController.clear()
+                toolbarView?.showToolbarActions()
+                return@requestSnapshot
+            }
+            toolbarView?.showSuggestions()
             predictionController.request(snapshot) { result ->
                 mainHandler.post {
                     val current = latestCompositionSnapshot
-                    if (result.requestId != predictionController.latestRequestId() ||
+                    if (contentMode != ContentMode.KEYBOARD ||
+                        toolbarView?.isSuggestionsMode() != true ||
+                        result.requestId != predictionController.latestRequestId() ||
                         current?.generation != result.snapshot.generation
                     ) return@post
                     toolbarView?.setCandidates(result.candidates)
@@ -289,6 +307,7 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun onSuggestionSelected(candidate: SuggestionCandidate) {
+        if (contentMode != ContentMode.KEYBOARD) return
         val snapshot = latestCompositionSnapshot ?: return
         learningController.recordAcceptedSuggestion(candidate, snapshot)
         predictionController.clear()
@@ -376,23 +395,34 @@ class KeyboardInputMethodService : InputMethodService() {
         toolbarView?.clearCandidates()
     }
 
+    private fun updateToolbarForKey(key: KeySpec) {
+        if (contentMode != ContentMode.KEYBOARD) return
+        val showSuggestions = key.type == KeyType.CHARACTER &&
+            !isBoundaryText(key.outputText)
+        if (showSuggestions) toolbarView?.showSuggestions()
+        else toolbarView?.showToolbarActions()
+    }
+
     private fun setKeyboardContent() {
         voiceController?.close()
         voiceController = null
         contentMode = ContentMode.KEYBOARD
         resizePanel = null
         refreshTheme()
-        toolbarView?.setToolsMode(false)
+        toolbarView?.showToolbarActions()
         val container = contentContainer ?: return
         container.removeAllViews()
         keyboardView?.let { view ->
+            val heightDp = keyboardSettings.keyboardHeightDp()
             view.layoutParams = FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
-                dp(keyboardSettings.keyboardHeightDp()),
+                dp(heightDp),
                 Gravity.BOTTOM,
             )
+            updateSafeAreaHeight(heightDp)
             container.addView(view)
         }
+        requestCompositionSnapshot()
     }
 
     private fun showTools() {
@@ -402,7 +432,7 @@ class KeyboardInputMethodService : InputMethodService() {
         }
         contentMode = ContentMode.TOOLS
         clearSuggestions()
-        toolbarView?.setToolsMode(true)
+        toolbarView?.showToolbarActions()
         contentContainer?.let { container ->
             container.removeAllViews()
             val tools = ToolsPanelView(this, ::onToolSelected)
@@ -418,6 +448,7 @@ class KeyboardInputMethodService : InputMethodService() {
         when (tool) {
             "settings" -> openSettings(focusSearch = false)
             "search" -> openSettings(focusSearch = true)
+            "language" -> showLanguage()
             "resize" -> showResize()
             "themes" -> openThemeActivity()
             "emoji" -> showEmoji()
@@ -447,7 +478,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun showEmoji() {
         contentMode = ContentMode.EMOJI
         clearSuggestions()
-        toolbarView?.setToolsMode(true)
+        toolbarView?.showToolbarActions()
         val container = contentContainer ?: return
         container.removeAllViews()
         val emojiContainer = FrameLayout(this)
@@ -488,46 +519,75 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun showVoice() {
         contentMode = ContentMode.VOICE
         clearSuggestions()
-        toolbarView?.setToolsMode(true)
+        toolbarView?.showToolbarActions()
         val container = contentContainer ?: return
         container.removeAllViews()
         var panel: VoicePanelView? = null
-        val controller = VoiceController(this, onEvent = { event ->
-            mainHandler.post { panel?.handle(event) }
-        })
+        var controller: VoiceController? = null
         val voicePanel = VoicePanelView(
             context = this,
             onStart = { language ->
-                if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
-                    android.content.pm.PackageManager.PERMISSION_GRANTED
-                ) {
-                    startActivity(Intent(this, VoicePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
-                } else controller.start(language)
+                controller?.let { activeController ->
+                    if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO) !=
+                        android.content.pm.PackageManager.PERMISSION_GRANTED
+                    ) {
+                        startActivity(Intent(this, VoicePermissionActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+                    } else activeController.start(language)
+                }
             },
-            onPause = controller::pause,
-            onResume = controller::resume,
-            onStop = controller::stop,
-            onCancel = controller::cancel,
-            onTranslate = controller::translate,
+            onPause = { controller?.pause() },
+            onResume = { controller?.resume() },
+            onStop = { controller?.stop() },
+            onCancel = { controller?.cancel() },
+            onTranslate = { target -> controller?.translate(target) },
             onInsert = { text ->
                 currentInputConnection?.commitText(text, 1)
                 requestCompositionSnapshot()
             },
             onBack = ::setKeyboardContent,
         )
-        voicePanel.applyTheme(activeTheme)
         panel = voicePanel
-        voiceController = controller
         container.addView(voicePanel, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
+        controller = VoiceController(this, onEvent = { event ->
+            mainHandler.post { panel?.handle(event) }
+        })
+        voicePanel.applyTheme(activeTheme)
+        voiceController = controller
+    }
+
+    private fun showLanguage() {
+        contentMode = ContentMode.LANGUAGE
+        clearSuggestions()
+        toolbarView?.showToolbarActions()
+        val container = contentContainer ?: return
+        container.removeAllViews()
+        val panel = LanguagePanelView(
+            context = this,
+            selectedLanguage = keyboardState.language,
+            onLanguageSelected = ::selectLanguage,
+            onBack = ::setKeyboardContent,
+        )
+        panel.applyTheme(activeTheme)
+        container.addView(panel, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT,
         ))
     }
 
+    private fun selectLanguage(language: KeyboardLanguage) {
+        keyboardState.setLanguage(language)
+        compositionController.reset(keyboardState.editorInputState, keyboardState.language)
+        keyboardView?.invalidate()
+        setKeyboardContent()
+    }
+
     private fun showResize() {
         contentMode = ContentMode.RESIZE
         clearSuggestions()
-        toolbarView?.setToolsMode(true)
+        toolbarView?.showToolbarActions()
         heightBeforeResizeDp = keyboardSettings.keyboardHeightDp()
         var resizeHeightDp = heightBeforeResizeDp
         val container = contentContainer ?: return
@@ -547,6 +607,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onHeightChanged = { value ->
                 resizeHeightDp = value
                 keyboardView?.let { updateKeyboardHeight(it, value) }
+                updateSafeAreaHeight(value)
             },
             onDone = {
                 keyboardSettings.setKeyboardHeightDp(resizeHeightDp)
@@ -559,6 +620,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onReset = {
                 resizeHeightDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
                 keyboardView?.let { updateKeyboardHeight(it, resizeHeightDp) }
+                updateSafeAreaHeight(resizeHeightDp)
                 panel.setHeightDp(resizeHeightDp)
             },
         )
@@ -580,6 +642,17 @@ class KeyboardInputMethodService : InputMethodService() {
         view.invalidate()
     }
 
+    private fun updateSafeAreaHeight(keyboardHeightDp: Int) {
+        val rowCount = keyboardView?.currentRowCount() ?: DEFAULT_ENGLISH_ROW_COUNT
+        safeAreaHeightDp = (keyboardHeightDp.toFloat() / rowCount)
+            .toInt().coerceAtLeast(MIN_SAFE_AREA_HEIGHT_DP)
+        val safe = safeAreaView ?: return
+        safe.layoutParams = (safe.layoutParams ?: LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT, dp(safeAreaHeightDp)
+        )).apply { height = dp(safeAreaHeightDp) }
+        safe.requestLayout()
+    }
+
     private fun refreshTheme() {
         if (!::themeStore.isInitialized) return
         activeTheme = themeStore.activeTheme()
@@ -590,11 +663,13 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private enum class ContentMode { KEYBOARD, TOOLS, RESIZE, EMOJI, VOICE }
+    private enum class ContentMode { KEYBOARD, TOOLS, RESIZE, EMOJI, VOICE, LANGUAGE }
 
     private companion object {
         const val TOOLBAR_HEIGHT_DP = 56
-        const val SAFE_AREA_HEIGHT_DP = 8
+        const val DEFAULT_SAFE_AREA_HEIGHT_DP = 68
+        const val DEFAULT_ENGLISH_ROW_COUNT = 4
+        const val MIN_SAFE_AREA_HEIGHT_DP = 48
         const val MIN_GLIDE_CONFIDENCE = 48
     }
 }

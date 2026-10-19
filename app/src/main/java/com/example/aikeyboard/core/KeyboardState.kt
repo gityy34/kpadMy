@@ -84,6 +84,14 @@ class KeyboardState(initialMode: KeyboardMode) {
         lastShiftUptime = Long.MIN_VALUE
     }
 
+    /** Changes language without recreating the IME or touching the current editor text. */
+    fun setLanguage(value: KeyboardLanguage) {
+        language = value
+        mode = KeyboardMode.LETTERS
+        shiftState = ShiftState.OFF
+        lastShiftUptime = Long.MIN_VALUE
+    }
+
     companion object {
         private val DEFAULT_EDITOR_INPUT_STATE = EditorInputState(
             inputType = 0,

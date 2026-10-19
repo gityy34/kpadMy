@@ -35,7 +35,9 @@ class GlideEngine(
 
         val languageOrder = if (containsUrdu(extracted)) {
             listOf(PredictionLanguage.URDU)
-        } else if (gesture.activeLanguage == KeyboardLanguage.URDU) {
+        } else if (gesture.activeLanguage == KeyboardLanguage.URDU ||
+            gesture.activeLanguage == KeyboardLanguage.ROMAN_URDU
+        ) {
             listOf(PredictionLanguage.ROMAN_URDU, PredictionLanguage.ENGLISH)
         } else {
             listOf(PredictionLanguage.ENGLISH, PredictionLanguage.ROMAN_URDU)

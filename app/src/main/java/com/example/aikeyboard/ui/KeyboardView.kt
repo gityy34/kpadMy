@@ -276,6 +276,8 @@ class KeyboardView(
 
     fun currentGlideGeometry(): List<GlideKeyGeometry> = glideGeometry
 
+    fun currentRowCount(): Int = layoutProvider.layoutFor(state.language, state.mode).rows.size
+
     override fun onDetachedFromWindow() {
         clearPressedState()
         super.onDetachedFromWindow()
