@@ -11,9 +11,6 @@ class AndroidSpeechRecognitionProvider(
     context: Context,
     private val onEvent: (VoiceEvent) -> Unit,
 ) : SpeechRecognitionProvider {
-    private val recognizer: SpeechRecognizer? = if (SpeechRecognizer.isRecognitionAvailable(context)) {
-        SpeechRecognizer.createSpeechRecognizer(context).also { it.setRecognitionListener(listener) }
-    } else null
     private val listener = object : RecognitionListener {
         override fun onReadyForSpeech(params: Bundle?) = onEvent(VoiceEvent.State(VoiceSessionState.LISTENING))
         override fun onBeginningOfSpeech() = Unit
@@ -40,6 +37,9 @@ class AndroidSpeechRecognitionProvider(
         }
         override fun onEvent(eventType: Int, params: Bundle?) = Unit
     }
+    private val recognizer: SpeechRecognizer? = if (SpeechRecognizer.isRecognitionAvailable(context)) {
+        SpeechRecognizer.createSpeechRecognizer(context).also { it.setRecognitionListener(listener) }
+    } else null
 
     override fun start(language: SpeechLanguage) {
         val engine = recognizer ?: run {
