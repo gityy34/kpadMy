@@ -31,11 +31,12 @@ class KeyboardView(
     context: Context,
     private val layoutProvider: KeyboardLayoutProvider,
     private val state: KeyboardState,
-    private val onKeyPressed: (KeySpec) -> Unit,
+    private val onKeyPressed: (KeySpec) -> Boolean,
     private val glideEnabled: () -> Boolean = { false },
     private val onGlideStarted: () -> Unit = {},
     private val onGlideCompleted: (GlideGesture) -> Unit = {},
     private val onGlideCancelled: (GlideGesture) -> Unit = {},
+    private val onSpaceLongPressed: () -> Unit = {},
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -76,11 +77,26 @@ class KeyboardView(
         }
     }
 
+    private val spaceLongPressRunnable = Runnable {
+        val key = touchTracker.pressedKey
+        val pointerId = touchTracker.activePointerId
+        if (pointerId == TouchTracker.INVALID_POINTER_ID ||
+            key?.type != KeyType.SPACE ||
+            !spaceCommitted ||
+            !touchTracker.owns(pointerId)
+        ) return@Runnable
+
+        spaceLongPressTriggered = true
+        onSpaceLongPressed()
+    }
+
     private var keyboardLayout: KeyboardLayout = layoutProvider.layoutFor(state.language, state.mode)
     private var rowMetrics: Array<RowMetrics> = emptyArray()
     private var pressedRow = -1
     private var pressedColumn = -1
     private var backspaceRepeatCount = 0
+    private var spaceCommitted = false
+    private var spaceLongPressTriggered = false
     private var glideGeometry: List<GlideKeyGeometry> = emptyList()
     private var glideEligible = false
     private var glideActive = false
@@ -208,10 +224,14 @@ class KeyboardView(
                     // Schedule the visual pressed state before calling into InputConnection.
                     // The text commit is still synchronous and happens in this same event.
                     invalidate()
-                    onKeyPressed(hit)
+                    val committed = onKeyPressed(hit)
                     // State changes such as one-shot Shift consumption and mode switching must
                     // be reflected without making the next key wait for a later event.
                     invalidate()
+                    if (hit.type == KeyType.SPACE && committed) {
+                        spaceCommitted = true
+                        repeatHandler.postDelayed(spaceLongPressRunnable, SPACE_LONG_PRESS_DELAY_MS)
+                    }
                     if (hit.type == KeyType.BACKSPACE) {
                         backspaceRepeatCount = 0
                         repeatHandler.postDelayed(repeatRunnable, BACKSPACE_REPEAT_START_DELAY_MS)
@@ -429,7 +449,10 @@ class KeyboardView(
 
     private fun clearPressedState() {
         repeatHandler.removeCallbacks(repeatRunnable)
+        repeatHandler.removeCallbacks(spaceLongPressRunnable)
         backspaceRepeatCount = 0
+        spaceCommitted = false
+        spaceLongPressTriggered = false
         touchTracker.cancel()
         pressedRow = -1
         pressedColumn = -1
@@ -462,6 +485,7 @@ class KeyboardView(
         const val BACKSPACE_REPEAT_MEDIUM_INTERVAL_MS = 60L
         const val BACKSPACE_REPEAT_FAST_INTERVAL_MS = 42L
         const val BACKSPACE_REPEAT_MIN_INTERVAL_MS = 30L
+        const val SPACE_LONG_PRESS_DELAY_MS = 2_000L
         const val KEY_INSET_DP = 2f
         const val CORNER_RADIUS_DP = 6f
         const val LETTER_TEXT_SIZE_DP = 21f
