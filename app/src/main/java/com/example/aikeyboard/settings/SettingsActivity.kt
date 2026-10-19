@@ -36,11 +36,18 @@ class SettingsActivity : Activity() {
             text = getString(R.string.clear_personal_data)
             setOnClickListener { confirmClear() }
         }
+        val glideToggle = Switch(this).apply {
+            text = getString(R.string.glide_typing)
+            isChecked = settings.glideTypingEnabled()
+            setPadding(24, 12, 24, 12)
+            setOnCheckedChangeListener { _, enabled -> settings.setGlideTypingEnabled(enabled) }
+        }
         setContentView(LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.TOP
             addView(title)
             addView(toggle)
+            addView(glideToggle)
             addView(clearButton)
         })
     }

@@ -16,6 +16,10 @@ import com.example.aikeyboard.core.KeyType
 import com.example.aikeyboard.learning.LearningCommitReason
 import com.example.aikeyboard.learning.PersonalLearningController
 import com.example.aikeyboard.learning.PersonalVocabularyStore
+import com.example.aikeyboard.glide.GlideCommitter
+import com.example.aikeyboard.glide.GlideController
+import com.example.aikeyboard.glide.GlideEngine
+import com.example.aikeyboard.glide.GlideGesture
 import com.example.aikeyboard.prediction.LocalPredictionEngine
 import com.example.aikeyboard.prediction.PredictionController
 import com.example.aikeyboard.prediction.SuggestionCandidate
@@ -34,26 +38,36 @@ class KeyboardInputMethodService : InputMethodService() {
     private lateinit var predictionController: PredictionController
     private lateinit var learningController: PersonalLearningController
     private lateinit var keyboardSettings: SharedPreferencesKeyboardSettings
+    private lateinit var personalVocabulary: PersonalVocabularyStore
+    private lateinit var glideController: GlideController
+    private var glideTypingEnabled = true
     private var keyboardView: KeyboardView? = null
     private var suggestionStripView: SuggestionStripView? = null
     private val mainHandler = Handler(Looper.getMainLooper())
 
     @Volatile
     private var latestCompositionSnapshot: CompositionSnapshot? = null
+    @Volatile
+    private var preGestureSnapshot: CompositionSnapshot? = null
 
     override fun onCreate() {
         super.onCreate()
         keyboardSettings = SharedPreferencesKeyboardSettings(this)
+        glideTypingEnabled = keyboardSettings.glideTypingEnabled()
         keyboardState = KeyboardState(keyboardSettings.initialKeyboardMode())
         typingEngine = TypingEngine(keyboardState)
         compositionController = CompositionController()
-        val personalVocabulary = PersonalVocabularyStore(
+        personalVocabulary = PersonalVocabularyStore(
             context = this,
             enabled = { keyboardSettings.personalizedSuggestionsEnabled() },
         )
         learningController = PersonalLearningController(
             store = personalVocabulary,
             enabled = { keyboardSettings.personalizedSuggestionsEnabled() },
+        )
+        glideController = GlideController(
+            engine = GlideEngine(personalVocabulary = personalVocabulary),
+            geometryProvider = { keyboardView?.currentGlideGeometry().orEmpty() },
         )
         predictionController = PredictionController(
             LocalPredictionEngine(personalVocabulary = personalVocabulary),
@@ -81,6 +95,13 @@ class KeyboardInputMethodService : InputMethodService() {
                 // It never sits in front of the key-to-InputConnection path.
                 requestCompositionSnapshot()
             },
+            glideEnabled = { glideTypingEnabled },
+            onGlideStarted = {
+                preGestureSnapshot = latestCompositionSnapshot
+                glideController.cancel()
+            },
+            onGlideCompleted = ::onGlideCompleted,
+            onGlideCancelled = ::onGlideCancelled,
         )
         keyboardView = view
 
@@ -159,6 +180,7 @@ class KeyboardInputMethodService : InputMethodService() {
         keyboardView = null
         suggestionStripView = null
         predictionController.close()
+        glideController.close()
         learningController.close()
         compositionController.close()
         super.onDestroy()
@@ -194,6 +216,40 @@ class KeyboardInputMethodService : InputMethodService() {
         suggestionStripView?.clearCandidates()
         SuggestionSelectionEngine.apply(currentInputConnection, candidate, snapshot)
         requestCompositionSnapshot()
+    }
+
+    private fun onGlideCompleted(gesture: GlideGesture) {
+        val snapshot = preGestureSnapshot
+        glideController.recognize(gesture) { recognition ->
+            mainHandler.post {
+                val candidate = recognition.candidates.firstOrNull()
+                if (candidate == null || recognition.confidence < MIN_GLIDE_CONFIDENCE) {
+                    if (recognition.candidates.isNotEmpty()) {
+                        suggestionStripView?.setCandidates(recognition.candidates)
+                    }
+                    requestCompositionSnapshot()
+                    return@post
+                }
+                if (GlideCommitter.commit(currentInputConnection, gesture, snapshot, candidate.text)) {
+                    snapshot?.let {
+                        learningController.recordWord(
+                            word = candidate.text,
+                            language = candidate.language,
+                            editor = it.editorInputState,
+                            explicitlyAccepted = true,
+                        )
+                    }
+                    suggestionStripView?.setCandidates(recognition.candidates)
+                }
+                preGestureSnapshot = null
+                requestCompositionSnapshot()
+            }
+        }
+    }
+
+    private fun onGlideCancelled(gesture: GlideGesture) {
+        GlideCommitter.removeProvisional(currentInputConnection, gesture.provisionalText)
+        preGestureSnapshot = null
     }
 
     private fun onSuggestionLongPressed(candidate: SuggestionCandidate) {
@@ -245,5 +301,6 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private companion object {
         const val SuggestionStripViewHeightDp = 56
+        const val MIN_GLIDE_CONFIDENCE = 48
     }
 }

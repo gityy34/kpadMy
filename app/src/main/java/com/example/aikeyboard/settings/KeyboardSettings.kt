@@ -10,6 +10,10 @@ interface KeyboardSettings {
     fun personalizedSuggestionsEnabled(): Boolean = true
 
     fun setPersonalizedSuggestionsEnabled(enabled: Boolean) = Unit
+
+    fun glideTypingEnabled(): Boolean = true
+
+    fun setGlideTypingEnabled(enabled: Boolean) = Unit
 }
 
 class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
@@ -29,9 +33,17 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         preferences.edit().putBoolean(KEY_PERSONALIZED_SUGGESTIONS, enabled).apply()
     }
 
+    override fun glideTypingEnabled(): Boolean =
+        preferences.getBoolean(KEY_GLIDE_TYPING, true)
+
+    override fun setGlideTypingEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_GLIDE_TYPING, enabled).apply()
+    }
+
     companion object {
         private const val PREFERENCES_NAME = "keyboard_settings"
         private const val KEY_START_IN_SYMBOLS = "start_in_symbols"
         private const val KEY_PERSONALIZED_SUGGESTIONS = "personalized_suggestions"
+        private const val KEY_GLIDE_TYPING = "glide_typing"
     }
 }

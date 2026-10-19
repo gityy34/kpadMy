@@ -24,6 +24,8 @@ class LocalLexicon {
         e("can", PredictionLanguage.ENGLISH, 5000), e("will", PredictionLanguage.ENGLISH, 5000),
         e("is", PredictionLanguage.ENGLISH, 8500), e("my", PredictionLanguage.ENGLISH, 7000),
         e("keyboard", PredictionLanguage.ENGLISH, 2500),
+        e("android", PredictionLanguage.ENGLISH, 3300), e("project", PredictionLanguage.ENGLISH, 3200),
+        e("people", PredictionLanguage.ENGLISH, 3400), e("because", PredictionLanguage.ENGLISH, 3600),
 
         e("آپ", PredictionLanguage.URDU, 9500), e("کیسے", PredictionLanguage.URDU, 8200),
         e("ہیں", PredictionLanguage.URDU, 9000), e("کا", PredictionLanguage.URDU, 7000),

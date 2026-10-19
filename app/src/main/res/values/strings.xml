@@ -7,6 +7,7 @@
     <string name="open_keyboard_settings">Open Keyboard Settings</string>
     <string name="personal_learning_title">Personal Suggestions</string>
     <string name="personalized_suggestions">Personalized suggestions</string>
+    <string name="glide_typing">Glide typing</string>
     <string name="clear_personal_data">Clear learned words / personal typing data</string>
     <string name="clear_personal_data_confirmation">Remove all privately learned words and ranking data?</string>
 </resources>
