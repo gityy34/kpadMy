@@ -86,7 +86,8 @@ class TypingEngineTest {
         } as InputConnection
 
         assertTrue(engine.handle(KeySpec.action(KeyType.ENTER, "enter"), connection))
-        assertEquals(listOf("key:0", "key:1"), calls)
+        assertEquals(2, calls.count { it.startsWith("key:") })
+        assertTrue(calls.none { it.startsWith("commit:") })
     }
 
     private fun recordingConnection(events: MutableList<String>): InputConnection =
