@@ -39,6 +39,10 @@ class KeyboardView(
     private val onSpaceLongPressed: () -> Unit = {},
     private val onSpaceCursorStarted: () -> Boolean = { false },
     private val onSpaceCursorMoved: (Int) -> Unit = {},
+    private val onBackspaceSwipeStarted: () -> Boolean = { false },
+    private val onBackspaceSwipeMoved: () -> Unit = {},
+    private val onBackspaceSwipeFinished: () -> Unit = {},
+    private val onBackspaceSwipeCancelled: () -> Unit = {},
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -233,9 +237,14 @@ class KeyboardView(
                         onGlideStarted()
                     }
                     // Schedule the visual pressed state before calling into InputConnection.
-                    // The text commit is still synchronous and happens in this same event.
+                    // Backspace is deferred until ACTION_UP so a left swipe can show a word
+                    // selection first instead of deleting text during the gesture.
                     invalidate()
-                    val committed = onKeyPressed(hit)
+                    val committed = if (hit.type == KeyType.BACKSPACE) {
+                        true
+                    } else {
+                        onKeyPressed(hit)
+                    }
                     // State changes such as one-shot Shift consumption and mode switching must
                     // be reflected without making the next key wait for a later event.
                     invalidate()
@@ -293,6 +302,15 @@ class KeyboardView(
             MotionEvent.ACTION_UP -> {
                 if (touchTracker.owns(event.getPointerId(event.actionIndex))) {
                     if (glideActive) notifyGlideCompleted()
+                    val pressedKey = touchTracker.pressedKey
+                    if (backspaceSwipeActive) {
+                        backspaceSwipeActive = false
+                        onBackspaceSwipeFinished()
+                    } else if (pressedKey?.type == KeyType.BACKSPACE && backspaceRepeatCount == 0) {
+                        // A quick Backspace tap still deletes exactly once, but only after we
+                        // know that the gesture was not becoming a swipe selection.
+                        onKeyPressed(pressedKey)
+                    }
                     clearPressedState()
                     performClick()
                 }
@@ -473,8 +491,11 @@ class KeyboardView(
     private fun clearPressedState() {
         repeatHandler.removeCallbacks(repeatRunnable)
         repeatHandler.removeCallbacks(spaceLongPressRunnable)
+        if (backspaceSwipeActive) {
+            backspaceSwipeActive = false
+            onBackspaceSwipeCancelled()
+        }
         backspaceRepeatCount = 0
-        backspaceSwipeActive = false
         backspaceLastX = 0f
         backspaceStartY = 0f
         backspaceAccumulatedLeft = 0f
@@ -510,14 +531,14 @@ class KeyboardView(
                 leftDistance < verticalDistance
             ) return
 
-            // A confirmed swipe takes over from the normal hold-repeat loop. The initial tap
-            // already deleted once; delete once more for the movement that confirmed the swipe.
+            // A confirmed swipe takes over from the normal hold-repeat loop. Text remains
+            // untouched while the editor selection grows under the finger.
             repeatHandler.removeCallbacks(repeatRunnable)
+            if (!onBackspaceSwipeStarted()) return
             backspaceSwipeActive = true
             backspaceAccumulatedLeft = 0f
-            val key = touchTracker.pressedKey ?: return
             backspaceLastX = x
-            onKeyPressed(key)
+            onBackspaceSwipeMoved()
             return
         }
 
@@ -526,7 +547,7 @@ class KeyboardView(
         backspaceAccumulatedLeft += leftDelta
         val step = BACKSPACE_SWIPE_STEP_DP * density
         while (backspaceAccumulatedLeft >= step) {
-            onKeyPressed(touchTracker.pressedKey ?: return)
+            onBackspaceSwipeMoved()
             backspaceAccumulatedLeft -= step
         }
     }
