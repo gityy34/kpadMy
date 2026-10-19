@@ -1,14 +1,19 @@
 package com.example.aikeyboard.ime
 
 import android.inputmethodservice.InputMethodService
+import android.content.BroadcastReceiver
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.graphics.Color
+import android.os.Build
 import android.view.View
 import android.view.inputmethod.EditorInfo
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
 import android.widget.FrameLayout
+import android.widget.EditText
 import android.widget.LinearLayout
 import com.example.aikeyboard.core.CompositionController
 import com.example.aikeyboard.core.CompositionSnapshot
@@ -31,6 +36,11 @@ import com.example.aikeyboard.prediction.SuggestionSelectionEngine
 import com.example.aikeyboard.settings.SharedPreferencesKeyboardSettings
 import com.example.aikeyboard.settings.KeyboardSettings
 import com.example.aikeyboard.settings.SettingsActivity
+import com.example.aikeyboard.theme.KeyboardTheme
+import com.example.aikeyboard.theme.ThemeActivity
+import com.example.aikeyboard.theme.ThemeStore
+import com.example.aikeyboard.emoji.EmojiPanelView
+import com.example.aikeyboard.emoji.EmojiUsageStore
 import com.example.aikeyboard.ui.KeyboardToolbarView
 import com.example.aikeyboard.ui.KeyboardView
 import com.example.aikeyboard.ui.ResizePanelView
@@ -48,15 +58,24 @@ class KeyboardInputMethodService : InputMethodService() {
     private lateinit var keyboardSettings: SharedPreferencesKeyboardSettings
     private lateinit var personalVocabulary: PersonalVocabularyStore
     private lateinit var glideController: GlideController
+    private lateinit var themeStore: ThemeStore
+    private lateinit var emojiUsageStore: EmojiUsageStore
     private var glideTypingEnabled = true
+    private var activeTheme = KeyboardTheme.SOLID_WHITE
     private var keyboardView: KeyboardView? = null
     private var toolbarView: KeyboardToolbarView? = null
     private var contentContainer: FrameLayout? = null
     private var rootView: LinearLayout? = null
     private var contentMode = ContentMode.KEYBOARD
     private var resizePanel: ResizePanelView? = null
+    private var safeAreaView: View? = null
     private var heightBeforeResizeDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val themeReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            refreshTheme()
+        }
+    }
 
     @Volatile
     private var latestCompositionSnapshot: CompositionSnapshot? = null
@@ -66,6 +85,16 @@ class KeyboardInputMethodService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         keyboardSettings = SharedPreferencesKeyboardSettings(this)
+        themeStore = ThemeStore(this)
+        emojiUsageStore = EmojiUsageStore(this)
+        activeTheme = themeStore.activeTheme()
+        val themeFilter = IntentFilter(ThemeStore.ACTION_THEME_CHANGED)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+            registerReceiver(themeReceiver, themeFilter, Context.RECEIVER_NOT_EXPORTED)
+        } else {
+            @Suppress("DEPRECATION")
+            registerReceiver(themeReceiver, themeFilter)
+        }
         glideTypingEnabled = keyboardSettings.glideTypingEnabled()
         keyboardState = KeyboardState(keyboardSettings.initialKeyboardMode())
         typingEngine = TypingEngine(keyboardState)
@@ -99,6 +128,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onOrderChanged = keyboardSettings::setToolbarOrder,
         )
         toolbarView = toolbar
+        toolbar.applyTheme(activeTheme)
 
         val view = KeyboardView(
             context = this,
@@ -122,6 +152,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onGlideCancelled = ::onGlideCancelled,
         )
         keyboardView = view
+        view.applyTheme(activeTheme)
 
         val container = FrameLayout(this)
         contentContainer = container
@@ -135,7 +166,8 @@ class KeyboardInputMethodService : InputMethodService() {
             ))
             // The safe area is a real, fixed row. Keyboard and glide geometry never extend into it.
             addView(View(this@KeyboardInputMethodService).apply {
-                setBackgroundColor(Color.rgb(243, 244, 246))
+                safeAreaView = this
+                setBackgroundColor(activeTheme.backgroundColor)
             }, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(SAFE_AREA_HEIGHT_DP)
             ))
@@ -146,6 +178,7 @@ class KeyboardInputMethodService : InputMethodService() {
 
     override fun onStartInput(attribute: EditorInfo, restarting: Boolean) {
         super.onStartInput(attribute, restarting)
+        refreshTheme()
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         keyboardState.setEditorInfo(attribute)
         latestCompositionSnapshot = null
@@ -156,6 +189,7 @@ class KeyboardInputMethodService : InputMethodService() {
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
         super.onStartInputView(info, restarting)
+        refreshTheme()
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         keyboardState.setEditorInfo(info)
         latestCompositionSnapshot = null
@@ -214,6 +248,7 @@ class KeyboardInputMethodService : InputMethodService() {
         contentContainer = null
         rootView = null
         resizePanel = null
+        runCatching { unregisterReceiver(themeReceiver) }
         predictionController.close()
         glideController.close()
         learningController.close()
@@ -335,6 +370,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun setKeyboardContent() {
         contentMode = ContentMode.KEYBOARD
         resizePanel = null
+        refreshTheme()
         toolbarView?.setToolsMode(false)
         val container = contentContainer ?: return
         container.removeAllViews()
@@ -358,7 +394,9 @@ class KeyboardInputMethodService : InputMethodService() {
         toolbarView?.setToolsMode(true)
         contentContainer?.let { container ->
             container.removeAllViews()
-            container.addView(ToolsPanelView(this, ::onToolSelected), FrameLayout.LayoutParams(
+            val tools = ToolsPanelView(this, ::onToolSelected)
+            tools.applyTheme(activeTheme)
+            container.addView(tools, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ))
@@ -370,6 +408,8 @@ class KeyboardInputMethodService : InputMethodService() {
             "settings" -> openSettings(focusSearch = false)
             "search" -> openSettings(focusSearch = true)
             "resize" -> showResize()
+            "themes" -> openThemeActivity()
+            "emoji" -> showEmoji()
             else -> setKeyboardContent()
         }
     }
@@ -387,6 +427,51 @@ class KeyboardInputMethodService : InputMethodService() {
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             .putExtra(SettingsActivity.EXTRA_FOCUS_SEARCH, focusSearch)
         startActivity(intent)
+    }
+
+    private fun openThemeActivity() {
+        startActivity(Intent(this, ThemeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun showEmoji() {
+        contentMode = ContentMode.EMOJI
+        clearSuggestions()
+        toolbarView?.setToolsMode(true)
+        val container = contentContainer ?: return
+        container.removeAllViews()
+        val emojiContainer = FrameLayout(this)
+        val search = EditText(this).apply {
+            hint = "Search emoji"
+            setSingleLine(true)
+            setPadding(dp(12), 0, dp(12), 0)
+        }
+        val panel = EmojiPanelView(
+            context = this,
+            usage = emojiUsageStore,
+            onEmojiSelected = { emoji ->
+                emojiUsageStore.record(emoji)
+                currentInputConnection?.commitText(emoji, 1)
+                requestCompositionSnapshot()
+            },
+            onBack = ::setKeyboardContent,
+        )
+        panel.setTheme(activeTheme)
+        search.addTextChangedListener(object : android.text.TextWatcher {
+            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) = Unit
+            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {
+                panel.setSearchQuery(s?.toString().orEmpty())
+            }
+            override fun afterTextChanged(s: android.text.Editable?) = Unit
+        })
+        emojiContainer.addView(panel, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
+        ).apply { topMargin = dp(44) })
+        emojiContainer.addView(search, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, dp(44), Gravity.TOP,
+        ))
+        container.addView(emojiContainer, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.MATCH_PARENT,
+        ))
     }
 
     private fun showResize() {
@@ -445,9 +530,17 @@ class KeyboardInputMethodService : InputMethodService() {
         view.invalidate()
     }
 
+    private fun refreshTheme() {
+        if (!::themeStore.isInitialized) return
+        activeTheme = themeStore.activeTheme()
+        toolbarView?.applyTheme(activeTheme)
+        keyboardView?.applyTheme(activeTheme)
+        safeAreaView?.setBackgroundColor(activeTheme.backgroundColor)
+    }
+
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
-    private enum class ContentMode { KEYBOARD, TOOLS, RESIZE }
+    private enum class ContentMode { KEYBOARD, TOOLS, RESIZE, EMOJI }
 
     private companion object {
         const val TOOLBAR_HEIGHT_DP = 56

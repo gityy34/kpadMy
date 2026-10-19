@@ -3,7 +3,9 @@ package com.example.aikeyboard.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
@@ -16,6 +18,8 @@ import com.example.aikeyboard.core.KeyboardState
 import com.example.aikeyboard.glide.GlideGesture
 import com.example.aikeyboard.glide.GlideKeyGeometry
 import com.example.aikeyboard.glide.GlidePathBuffer
+import com.example.aikeyboard.theme.KeyStyle
+import com.example.aikeyboard.theme.KeyboardTheme
 import kotlin.math.hypot
 import kotlin.math.roundToInt
 
@@ -53,6 +57,8 @@ class KeyboardView(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
+    private var theme = KeyboardTheme.SOLID_WHITE
     private val repeatHandler = Handler(Looper.getMainLooper())
     private val repeatRunnable = object : Runnable {
         override fun run() {
@@ -89,6 +95,20 @@ class KeyboardView(
         setBackgroundColor(BACKGROUND_COLOR)
     }
 
+    fun applyTheme(value: KeyboardTheme) {
+        theme = value
+        backgroundPaint.shader = if (value.isGradient) {
+            LinearGradient(
+                0f, 0f, width.toFloat().coerceAtLeast(1f), height.toFloat().coerceAtLeast(1f),
+                value.gradientStart ?: value.backgroundColor,
+                value.gradientEnd ?: value.backgroundColor,
+                Shader.TileMode.CLAMP,
+            )
+        } else null
+        trailPaint.color = value.accentColor
+        invalidate()
+    }
+
     override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
         val width = MeasureSpec.getSize(widthMeasureSpec)
         val desiredHeight = (KEYBOARD_HEIGHT_DP * density).roundToInt()
@@ -103,6 +123,7 @@ class KeyboardView(
     override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
         super.onSizeChanged(width, height, oldWidth, oldHeight)
         rebuildMetrics()
+        if (theme.isGradient) applyTheme(theme)
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -113,7 +134,8 @@ class KeyboardView(
             rebuildMetrics()
         }
 
-        canvas.drawColor(BACKGROUND_COLOR)
+        if (backgroundPaint.shader == null) canvas.drawColor(theme.backgroundColor)
+        else canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         drawGlideTrail(canvas)
         val shifted = state.shiftActive()
         for (rowIndex in keyboardLayout.rows.indices) {
@@ -125,13 +147,14 @@ class KeyboardView(
                 val right = metrics.right[column]
                 val isPressed = rowIndex == pressedRow && column == pressedColumn
                 keyPaint.color = when {
-                    isPressed -> PRESSED_KEY_COLOR
-                    key.type == KeyType.SHIFT && shifted -> SHIFT_ACTIVE_COLOR
+                    isPressed -> theme.pressedKeyColor
+                    key.type == KeyType.SHIFT && shifted -> theme.shiftColor
                     key.type == KeyType.MODE_SWITCH ||
                         key.type == KeyType.LANGUAGE_SWITCH ||
-                        key.type == KeyType.ENTER -> SPECIAL_KEY_COLOR
-                    else -> KEY_COLOR
+                        key.type == KeyType.ENTER -> theme.specialKeyColor
+                    else -> theme.keyColor
                 }
+                keyPaint.style = Paint.Style.FILL
                 canvas.drawRoundRect(
                     left + keyInset,
                     metrics.top + keyInset,
@@ -141,8 +164,20 @@ class KeyboardView(
                     cornerRadius,
                     keyPaint,
                 )
+                if (theme.keyStyle == KeyStyle.BORDERED) {
+                    keyPaint.style = Paint.Style.STROKE
+                    keyPaint.strokeWidth = density
+                    keyPaint.color = theme.borderColor
+                    canvas.drawRoundRect(
+                        left + keyInset, metrics.top + keyInset,
+                        right - keyInset, metrics.bottom - keyInset,
+                        cornerRadius, cornerRadius, keyPaint,
+                    )
+                    keyPaint.style = Paint.Style.FILL
+                }
 
                 val label = key.labelFor(shifted)
+                textPaint.color = theme.textColor
                 textPaint.textSize =
                     (if (key.type == KeyType.CHARACTER) LETTER_TEXT_SIZE_DP else ACTION_TEXT_SIZE_DP) * density
                 val textWidth = textPaint.measureText(label)

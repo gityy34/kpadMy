@@ -17,6 +17,9 @@
         <activity
             android:name=".settings.SettingsActivity"
             android:exported="false" />
+        <activity
+            android:name=".theme.ThemeActivity"
+            android:exported="false" />
 
         <service
             android:name=".ime.KeyboardInputMethodService"
