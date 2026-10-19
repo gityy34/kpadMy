@@ -4,4 +4,5 @@ package com.example.aikeyboard.core
 enum class KeyboardLanguage {
     ENGLISH,
     URDU,
+    ROMAN_URDU,
 }

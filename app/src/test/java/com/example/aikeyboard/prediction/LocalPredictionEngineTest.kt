@@ -51,6 +51,14 @@ class LocalPredictionEngineTest {
     }
 
     @Test
+    fun romanUrduLanguagePrioritizesRomanUrduCandidatesOnLatinKeys() {
+        val result = engine.predict(snapshot("muj", "muj", KeyboardLanguage.ROMAN_URDU))
+
+        assertTrue(result.first().text == "muj")
+        assertTrue(result.map { it.text }.contains("mujhe"))
+    }
+
+    @Test
     fun sensitiveEditorsNeverProduceCandidates() {
         val sensitive = editor.copy(isSensitive = true)
         val result = engine.predict(snapshot("hello", "hello", KeyboardLanguage.ENGLISH, sensitive))

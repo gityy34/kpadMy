@@ -8,8 +8,10 @@ import android.os.Handler
 import android.os.Looper
 import android.text.Layout
 import android.text.StaticLayout
+import android.text.TextUtils
 import android.text.TextDirectionHeuristics
 import android.text.TextPaint
+import android.graphics.Typeface
 import android.view.MotionEvent
 import android.view.View
 import com.example.aikeyboard.prediction.SuggestionCandidate
@@ -26,6 +28,7 @@ class KeyboardToolbarView(
     private val onCandidateSelected: (SuggestionCandidate) -> Unit,
     private val onCandidateLongPressed: (SuggestionCandidate) -> Unit,
     private val onOrderChanged: (List<String>) -> Unit,
+    suggestionSlotCount: Int = 3,
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -34,19 +37,28 @@ class KeyboardToolbarView(
     private val dividerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply { color = DIVIDER_COLOR }
     private val textPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
         color = TEXT_COLOR
-        textSize = 18f * density
+        textSize = SUGGESTION_TEXT_SIZE_DP * density
         textAlign = Paint.Align.CENTER
+        typeface = Typeface.create("sans-serif-medium", Typeface.NORMAL)
     }
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = TEXT_COLOR
         textSize = 22f * density
         textAlign = Paint.Align.CENTER
     }
+    private val iconStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        color = TEXT_COLOR
+        style = Paint.Style.STROKE
+        strokeWidth = 2.2f * density
+        strokeCap = Paint.Cap.ROUND
+        strokeJoin = Paint.Join.ROUND
+    }
     private var theme = KeyboardTheme.SOLID_WHITE
+    private val suggestionSlotCount = suggestionSlotCount.coerceIn(3, 4)
     private val handler = Handler(Looper.getMainLooper())
     private val longPress = Runnable {
         val item = centerItems.getOrNull(pressedIndex)
-        if (item != null && candidates.isEmpty()) {
+        if (item != null && centerMode == CenterMode.TOOLBAR) {
             reorderMode = true
             longPressTriggered = true
             invalidate()
@@ -59,6 +71,7 @@ class KeyboardToolbarView(
 
     private val centerItems = initialOrder.toMutableList()
     private var candidates: List<SuggestionCandidate> = emptyList()
+    private var centerMode = CenterMode.TOOLBAR
     private var activePointerId = INVALID_POINTER
     private var pressedIndex = -1
     private var reorderMode = false
@@ -80,7 +93,8 @@ class KeyboardToolbarView(
     }
 
     fun setCandidates(value: List<SuggestionCandidate>) {
-        candidates = value.take(SLOT_COUNT)
+        if (centerMode != CenterMode.SUGGESTIONS) return
+        candidates = value.take(suggestionSlotCount)
         invalidate()
     }
 
@@ -90,23 +104,41 @@ class KeyboardToolbarView(
         invalidate()
     }
 
-    fun setToolsMode(enabled: Boolean) {
-        if (enabled) candidates = emptyList()
+    fun showToolbarActions() {
+        centerMode = CenterMode.TOOLBAR
+        candidates = emptyList()
         invalidate()
+    }
+
+    fun showSuggestions() {
+        centerMode = CenterMode.SUGGESTIONS
+        invalidate()
+    }
+
+    fun isSuggestionsMode(): Boolean = centerMode == CenterMode.SUGGESTIONS
+
+    /** Compatibility boundary for existing callers entering a non-keyboard panel. */
+    fun setToolsMode(enabled: Boolean) {
+        if (enabled) showToolbarActions() else invalidate()
     }
 
     override fun onDraw(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         val edge = EDGE_WIDTH_DP * density
-        drawIcon(canvas, "☷", edge / 2f, "tools" == pressedAction())
-        drawIcon(canvas, "●", width - edge / 2f, "mic" == pressedAction())
+        drawToolsIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        drawMicrophoneIcon(canvas, width - edge / 2f, pressedIndex == EDGE_MIC)
         canvas.drawRect(edge - 1f, 0f, edge, height.toFloat(), dividerPaint)
         canvas.drawRect(width - edge, 0f, width - edge + 1f, height.toFloat(), dividerPaint)
 
         val centerLeft = edge
         val centerRight = width - edge
-        val centerWidth = (centerRight - centerLeft) / SLOT_COUNT
-        if (candidates.isNotEmpty()) {
+        val slots = if (centerMode == CenterMode.SUGGESTIONS) {
+            suggestionSlotCount
+        } else {
+            centerItems.size.coerceAtLeast(1)
+        }
+        val centerWidth = (centerRight - centerLeft) / slots
+        if (centerMode == CenterMode.SUGGESTIONS) {
             candidates.forEachIndexed { index, candidate ->
                 val left = centerLeft + centerWidth * index
                 if (index == pressedIndex) canvas.drawRect(left, 0f, left + centerWidth, height.toFloat(), pressedPaint)
@@ -136,7 +168,7 @@ class KeyboardToolbarView(
             MotionEvent.ACTION_MOVE -> {
                 val pointer = event.findPointerIndex(activePointerId)
                 if (pointer < 0) return true
-                if (reorderMode && candidates.isEmpty()) {
+                if (reorderMode && centerMode == CenterMode.TOOLBAR) {
                     val next = indexAt(event.getX(pointer))
                     if (next in centerItems.indices && pressedIndex in centerItems.indices && next != pressedIndex) {
                         val item = centerItems.removeAt(pressedIndex)
@@ -152,15 +184,23 @@ class KeyboardToolbarView(
                 val pointer = event.findPointerIndex(activePointerId)
                 val index = if (pointer >= 0) indexAt(event.getX(pointer)) else -1
                 val valid = index == pressedIndex && !reorderMode && !longPressTriggered
-                val candidate = candidates.getOrNull(if (valid) index else -1)
-                val item = if (candidates.isEmpty()) centerItems.getOrNull(if (valid) index else -1) else null
-                val edgeAction = if (valid && candidates.isEmpty()) index else -1
+                val candidate = if (valid && centerMode == CenterMode.SUGGESTIONS) {
+                    candidates.getOrNull(index)
+                } else null
+                val item = if (valid && centerMode == CenterMode.TOOLBAR && index >= 0) {
+                    centerItems.getOrNull(index)
+                } else null
+                val edgeAction = if (valid) index else -1
                 cancelTouch()
                 if (candidate != null) onCandidateSelected(candidate)
                 else if (item != null) onToolbarAction(item)
                 else if (edgeAction == -2) onTools()
                 else if (edgeAction == -3) onMic()
                 performClick()
+                return true
+            }
+            MotionEvent.ACTION_POINTER_UP -> {
+                if (event.getPointerId(event.actionIndex) == activePointerId) cancelTouch()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
@@ -187,14 +227,17 @@ class KeyboardToolbarView(
         invalidate()
     }
 
-    private fun pressedAction(): String? = null
-
     private fun indexAt(x: Float): Int {
         val edge = EDGE_WIDTH_DP * density
         if (x < edge) return -2
-        if (x > width - edge) return -3
-        return (((x - edge) / ((width - edge * 2f) / SLOT_COUNT)).toInt())
-            .coerceIn(0, SLOT_COUNT - 1)
+        if (x >= width - edge) return -3
+        val slots = if (centerMode == CenterMode.SUGGESTIONS) {
+            suggestionSlotCount
+        } else {
+            centerItems.size.coerceAtLeast(1)
+        }
+        return (((x - edge) / ((width - edge * 2f) / slots)).toInt())
+            .coerceIn(0, slots - 1)
     }
 
     private fun iconFor(item: String): String = when (item) {
@@ -209,11 +252,55 @@ class KeyboardToolbarView(
         canvas.drawText(icon, centerX, (height - (iconPaint.ascent() + iconPaint.descent())) / 2f, iconPaint)
     }
 
+    private fun drawToolsIcon(canvas: Canvas, centerX: Float, pressed: Boolean) {
+        if (pressed) {
+            canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
+                centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
+        }
+        iconStrokePaint.color = theme.textColor
+        val half = 10f * density
+        val knob = 2.5f * density
+        val y1 = height / 2f - 8f * density
+        val y2 = height / 2f
+        val y3 = height / 2f + 8f * density
+        canvas.drawLine(centerX - half, y1, centerX + half, y1, iconStrokePaint)
+        canvas.drawLine(centerX - half, y2, centerX + half, y2, iconStrokePaint)
+        canvas.drawLine(centerX - half, y3, centerX + half, y3, iconStrokePaint)
+        iconStrokePaint.style = Paint.Style.FILL
+        canvas.drawCircle(centerX - 3f * density, y1, knob, iconStrokePaint)
+        canvas.drawCircle(centerX + 4f * density, y2, knob, iconStrokePaint)
+        canvas.drawCircle(centerX - 1f * density, y3, knob, iconStrokePaint)
+        iconStrokePaint.style = Paint.Style.STROKE
+    }
+
+    private fun drawMicrophoneIcon(canvas: Canvas, centerX: Float, pressed: Boolean) {
+        if (pressed) {
+            canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
+                centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
+        }
+        iconStrokePaint.color = theme.textColor
+        val centerY = height / 2f
+        val capsuleWidth = 8f * density
+        val capsuleTop = centerY - 12f * density
+        val capsuleBottom = centerY + 3f * density
+        canvas.drawRoundRect(centerX - capsuleWidth, capsuleTop, centerX + capsuleWidth,
+            capsuleBottom, capsuleWidth, capsuleWidth, iconStrokePaint)
+        val arcLeft = centerX - 13f * density
+        val arcTop = centerY - 5f * density
+        val arcRight = centerX + 13f * density
+        val arcBottom = centerY + 10f * density
+        canvas.drawArc(arcLeft, arcTop, arcRight, arcBottom, 0f, 180f, false, iconStrokePaint)
+        canvas.drawLine(centerX, arcBottom, centerX, centerY + 15f * density, iconStrokePaint)
+        canvas.drawLine(centerX - 7f * density, centerY + 15f * density,
+            centerX + 7f * density, centerY + 15f * density, iconStrokePaint)
+    }
+
     private fun drawText(canvas: Canvas, value: String, left: Float, right: Float, rtl: Boolean) {
         val available = (right - left - 16f * density).roundToInt().coerceAtLeast(1)
         val direction = if (rtl) TextDirectionHeuristics.FIRSTSTRONG_RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR
         val layout = StaticLayout.Builder.obtain(value, 0, value.length, textPaint, available)
             .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setMaxLines(1)
+            .setEllipsize(TextUtils.TruncateAt.END)
             .setTextDirection(direction).build()
         canvas.save()
         canvas.translate(left + 8f * density, ((height - layout.height) / 2f).coerceAtLeast(0f))
@@ -224,8 +311,11 @@ class KeyboardToolbarView(
     private fun containsRtl(value: String): Boolean = value.any { it.code in 0x0590..0x08FF }
 
     private companion object {
-        const val SLOT_COUNT = 3
+        const val DEFAULT_SUGGESTION_SLOT_COUNT = 3
+        const val EDGE_TOOLS = -2
+        const val EDGE_MIC = -3
         const val EDGE_WIDTH_DP = 56f
+        const val SUGGESTION_TEXT_SIZE_DP = 20f
         const val LONG_PRESS_MILLIS = 800L
         const val INVALID_POINTER = -1
         val BACKGROUND_COLOR = Color.rgb(248, 249, 251)
@@ -233,4 +323,6 @@ class KeyboardToolbarView(
         val DIVIDER_COLOR = Color.rgb(220, 223, 230)
         val TEXT_COLOR = Color.rgb(32, 33, 36)
     }
+
+    private enum class CenterMode { TOOLBAR, SUGGESTIONS }
 }

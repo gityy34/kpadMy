@@ -42,7 +42,9 @@ object PersonalLearningPolicy {
 
     fun languageFor(word: String, activeLanguage: KeyboardLanguage): PredictionLanguage {
         if (word.any { isUrduCodePoint(it.code) }) return PredictionLanguage.URDU
-        if (activeLanguage == KeyboardLanguage.URDU) return PredictionLanguage.ROMAN_URDU
+        if (activeLanguage == KeyboardLanguage.URDU ||
+            activeLanguage == KeyboardLanguage.ROMAN_URDU
+        ) return PredictionLanguage.ROMAN_URDU
         return PredictionLanguage.ENGLISH
     }
 

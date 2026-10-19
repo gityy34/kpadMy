@@ -29,7 +29,6 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
             ),
             KeyboardRow(
                 arrayOf(
-                    KeySpec.languageSwitch("اردو"),
                     KeySpec.action(KeyType.MODE_SWITCH, "?123", 1.5f),
                     KeySpec.punctuation(","),
                     KeySpec.space(),
@@ -48,7 +47,6 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
             row("ٹثجچحخءھئؤ"),
             KeyboardRow(
                 arrayOf(
-                    KeySpec.languageSwitch("EN"),
                     KeySpec.action(KeyType.MODE_SWITCH, "۱۲۳", 1.5f),
                     KeySpec.punctuation("،"),
                     KeySpec.space(),
@@ -59,8 +57,8 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
         ),
     )
 
-    private val englishSymbols = symbolsLayout("اردو", "ABC", ",", ".", "_\"':;!?/")
-    private val urduSymbols = symbolsLayout("EN", "حروف", "،", "۔", "_\"':;!؟/")
+    private val englishSymbols = symbolsLayout("ABC", ",", ".", "_\"':;!?/")
+    private val urduSymbols = symbolsLayout("حروف", "،", "۔", "_\"':;!؟/")
 
     override fun layoutFor(language: KeyboardLanguage, mode: KeyboardMode): KeyboardLayout =
         when {
@@ -73,7 +71,6 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
     private fun row(text: String): KeyboardRow = KeyboardRow(keys(text))
 
     private fun symbolsLayout(
-        languageLabel: String,
         modeLabel: String,
         comma: String,
         period: String,
@@ -85,7 +82,6 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
             row(punctuationRow),
             KeyboardRow(
                 arrayOf(
-                    KeySpec.languageSwitch(languageLabel),
                     KeySpec.action(KeyType.MODE_SWITCH, modeLabel, 1.35f),
                     KeySpec.punctuation(comma),
                     KeySpec.space(3.5f),

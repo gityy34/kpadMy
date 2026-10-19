@@ -52,4 +52,16 @@ class KeyboardStateTest {
         state.toggleLanguage()
         assertEquals(KeyboardLanguage.ENGLISH, state.language)
     }
+
+    @Test
+    fun explicitLanguageSelectionSupportsRomanUrduWithoutRecreatingState() {
+        val state = KeyboardState(KeyboardMode.SYMBOLS)
+        state.pressShift(now = 100L)
+
+        state.setLanguage(KeyboardLanguage.ROMAN_URDU)
+
+        assertEquals(KeyboardLanguage.ROMAN_URDU, state.language)
+        assertEquals(KeyboardMode.LETTERS, state.mode)
+        assertFalse(state.shiftActive())
+    }
 }

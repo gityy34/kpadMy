@@ -28,6 +28,7 @@ class ToolsPanelView(
     private val items = listOf(
         "settings" to ("⚙" to "Settings"),
         "search" to ("⌕" to "Search settings"),
+        "language" to ("文" to "Language"),
         "resize" to ("↕" to "Resize"),
         "undo" to ("↶" to "Undo"),
         "redo" to ("↷" to "Redo"),
@@ -60,7 +61,12 @@ class ToolsPanelView(
             icon.textAlign = Paint.Align.CENTER
             canvas.drawText(item.second.first, left + 28f * resources.displayMetrics.density, top + cardHeight / 2f + 8f, icon)
             text.textSize = 15f * resources.displayMetrics.density
-            canvas.drawText(item.second.second, left + 52f * resources.displayMetrics.density, top + cardHeight / 2f + 5f, text)
+            val labelLeft = left + 52f * resources.displayMetrics.density
+            val labelRight = left + cardWidth - 34f * resources.displayMetrics.density
+            canvas.save()
+            canvas.clipRect(labelLeft, top, labelRight, top + cardHeight)
+            canvas.drawText(item.second.second, labelLeft, top + cardHeight / 2f + 5f, text)
+            canvas.restore()
             canvas.drawText("›", left + cardWidth - 18f * resources.displayMetrics.density, top + cardHeight / 2f + 7f, icon)
         }
     }
@@ -102,6 +108,9 @@ class ToolsPanelView(
         val column = ((x - gap) / (cardWidth + gap)).toInt()
         val row = ((y - gap) / (cardHeight + gap)).toInt()
         if (column !in 0..1 || row < 0) return -1
+        val cardLeft = gap + column * (cardWidth + gap)
+        val cardTop = gap + row * (cardHeight + gap)
+        if (x < cardLeft || x > cardLeft + cardWidth || y < cardTop || y > cardTop + cardHeight) return -1
         val index = row * 2 + column
         return if (index in items.indices) index else -1
     }

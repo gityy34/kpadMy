@@ -30,7 +30,7 @@ class KeyboardLayoutTest {
     }
 
     @Test
-    fun urduLayoutUsesRealUnicodeCharactersAndLanguageSwitch() {
+    fun urduLayoutUsesRealUnicodeCharactersWithoutBottomLanguageButton() {
         val layout = provider.layoutFor(KeyboardLanguage.URDU, KeyboardMode.LETTERS)
         val text = layout.rows.flatMap { it.keys.asIterable() }
             .filter { it.type == KeyType.CHARACTER }
@@ -38,7 +38,7 @@ class KeyboardLayoutTest {
 
         assertTrue(text.contains("ق"))
         assertTrue(text.contains("ے"))
-        assertTrue(layout.rows.last().keys.any { it.type == KeyType.LANGUAGE_SWITCH })
+        assertTrue(layout.rows.last().keys.none { it.type == KeyType.LANGUAGE_SWITCH })
     }
 
     @Test
@@ -48,6 +48,6 @@ class KeyboardLayoutTest {
 
         assertTrue(first === second)
         assertTrue(first.rows[0].keys[0].outputText == "1")
-        assertTrue(first.rows.last().keys.any { it.type == KeyType.LANGUAGE_SWITCH })
+        assertTrue(first.rows.last().keys.none { it.type == KeyType.LANGUAGE_SWITCH })
     }
 }
