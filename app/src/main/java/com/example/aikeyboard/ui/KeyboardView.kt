@@ -98,6 +98,10 @@ class KeyboardView(
     private var pressedRow = -1
     private var pressedColumn = -1
     private var backspaceRepeatCount = 0
+    private var backspaceSwipeActive = false
+    private var backspaceLastX = 0f
+    private var backspaceStartY = 0f
+    private var backspaceAccumulatedLeft = 0f
     private var spaceCommitted = false
     private var spaceLongPressTriggered = false
     private var spaceCursorActive = false
@@ -244,6 +248,9 @@ class KeyboardView(
                     }
                     if (hit.type == KeyType.BACKSPACE) {
                         backspaceRepeatCount = 0
+                        backspaceLastX = event.x
+                        backspaceStartY = event.y
+                        backspaceAccumulatedLeft = 0f
                         repeatHandler.postDelayed(repeatRunnable, BACKSPACE_REPEAT_START_DELAY_MS)
                     }
                 }
@@ -265,6 +272,9 @@ class KeyboardView(
                 } else if (spaceCommitted || spaceCursorActive) {
                     val index = event.findPointerIndex(touchTracker.activePointerId)
                     if (index >= 0) updateSpaceCursor(event.getX(index), event.getY(index))
+                } else if (touchTracker.pressedKey?.type == KeyType.BACKSPACE) {
+                    val index = event.findPointerIndex(touchTracker.activePointerId)
+                    if (index >= 0) updateBackspaceSwipe(event.getX(index), event.getY(index))
                 } else if (glideEligible) {
                     val index = event.findPointerIndex(touchTracker.activePointerId)
                     if (index >= 0) updateGlidePath(event.getX(index), event.getY(index))
@@ -464,6 +474,10 @@ class KeyboardView(
         repeatHandler.removeCallbacks(repeatRunnable)
         repeatHandler.removeCallbacks(spaceLongPressRunnable)
         backspaceRepeatCount = 0
+        backspaceSwipeActive = false
+        backspaceLastX = 0f
+        backspaceStartY = 0f
+        backspaceAccumulatedLeft = 0f
         spaceCommitted = false
         spaceLongPressTriggered = false
         spaceCursorActive = false
@@ -486,6 +500,35 @@ class KeyboardView(
         backspaceRepeatCount < 15 -> BACKSPACE_REPEAT_MEDIUM_INTERVAL_MS
         backspaceRepeatCount < 30 -> BACKSPACE_REPEAT_FAST_INTERVAL_MS
         else -> BACKSPACE_REPEAT_MIN_INTERVAL_MS
+    }
+
+    private fun updateBackspaceSwipe(x: Float, y: Float) {
+        if (!backspaceSwipeActive) {
+            val leftDistance = backspaceLastX - x
+            val verticalDistance = kotlin.math.abs(y - backspaceStartY)
+            if (leftDistance < BACKSPACE_SWIPE_START_DISTANCE_DP * density ||
+                leftDistance < verticalDistance
+            ) return
+
+            // A confirmed swipe takes over from the normal hold-repeat loop. The initial tap
+            // already deleted once; delete once more for the movement that confirmed the swipe.
+            repeatHandler.removeCallbacks(repeatRunnable)
+            backspaceSwipeActive = true
+            backspaceAccumulatedLeft = 0f
+            val key = touchTracker.pressedKey ?: return
+            backspaceLastX = x
+            onKeyPressed(key)
+            return
+        }
+
+        val leftDelta = backspaceLastX - x
+        backspaceLastX = x
+        backspaceAccumulatedLeft += leftDelta
+        val step = BACKSPACE_SWIPE_STEP_DP * density
+        while (backspaceAccumulatedLeft >= step) {
+            onKeyPressed(touchTracker.pressedKey ?: return)
+            backspaceAccumulatedLeft -= step
+        }
     }
 
     private fun updateSpaceCursor(x: Float, y: Float) {
@@ -527,6 +570,8 @@ class KeyboardView(
         const val BACKSPACE_REPEAT_MEDIUM_INTERVAL_MS = 60L
         const val BACKSPACE_REPEAT_FAST_INTERVAL_MS = 42L
         const val BACKSPACE_REPEAT_MIN_INTERVAL_MS = 30L
+        const val BACKSPACE_SWIPE_START_DISTANCE_DP = 18f
+        const val BACKSPACE_SWIPE_STEP_DP = 14f
         const val SPACE_LONG_PRESS_DELAY_MS = 2_000L
         const val SPACE_CURSOR_START_DISTANCE_DP = 18f
         const val SPACE_CURSOR_STEP_DP = 14f
