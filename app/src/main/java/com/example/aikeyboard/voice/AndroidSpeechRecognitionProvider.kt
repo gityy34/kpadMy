@@ -56,8 +56,16 @@ class AndroidSpeechRecognitionProvider(
             .onFailure { onEvent(VoiceEvent.State(VoiceSessionState.ERROR, "Microphone permission is required")) }
     }
 
-    override fun pause() = runCatching { recognizer?.stopListening() }
-    override fun stop() = runCatching { recognizer?.stopListening() }
-    override fun cancel() = runCatching { recognizer?.cancel() }
+    override fun pause() {
+        runCatching { recognizer?.stopListening() }
+    }
+
+    override fun stop() {
+        runCatching { recognizer?.stopListening() }
+    }
+
+    override fun cancel() {
+        runCatching { recognizer?.cancel() }
+    }
     override fun close() { runCatching { recognizer?.destroy() } }
 }
