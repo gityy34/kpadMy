@@ -16,6 +16,7 @@ import android.view.WindowManager
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.Switch
@@ -121,7 +122,7 @@ class SettingsActivity : Activity() {
         search = EditText(this).apply {
             hint = getString(R.string.search_settings)
             textSize = 16f
-            singleLine = true
+            setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
             setTextColor(activeTheme.textColor)
             setHintTextColor(mutedColor())
@@ -156,9 +157,9 @@ class SettingsActivity : Activity() {
             orientation = LinearLayout.VERTICAL
             setPadding(0, 0, 0, dp(16))
         }
-        bodyScroll.addView(body, ScrollView.LayoutParams(
-            ScrollView.LayoutParams.MATCH_PARENT,
-            ScrollView.LayoutParams.WRAP_CONTENT,
+        bodyScroll.addView(body, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
         ))
         screenRoot.addView(bodyScroll, LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
