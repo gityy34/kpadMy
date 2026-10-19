@@ -25,6 +25,7 @@ import com.example.aikeyboard.core.DefaultKeyboardLayoutProvider
 import com.example.aikeyboard.core.KeyboardLanguage
 import com.example.aikeyboard.core.KeyboardState
 import com.example.aikeyboard.core.TypingEngine
+import com.example.aikeyboard.core.KeyboardEditHistory
 import com.example.aikeyboard.core.KeySpec
 import com.example.aikeyboard.core.KeyType
 import com.example.aikeyboard.learning.LearningCommitReason
@@ -74,6 +75,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private lateinit var glideController: GlideController
     private lateinit var themeStore: ThemeStore
     private lateinit var emojiUsageStore: EmojiUsageStore
+    private val editHistory = KeyboardEditHistory()
     private var glideTypingEnabled = true
     private var activeTheme = KeyboardTheme.SOLID_WHITE
     private var keyboardView: KeyboardView? = null
@@ -82,6 +84,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var rootView: FixedImeLayout? = null
     private var contentMode = ContentMode.KEYBOARD
     private var resizePanel: ResizePanelView? = null
+    private var toolsPanel: ToolsPanelView? = null
     private var voiceController: VoiceController? = null
     private var safeAreaView: View? = null
     private var safeAreaHeightDp = DEFAULT_SAFE_AREA_HEIGHT_DP
@@ -156,8 +159,13 @@ class KeyboardInputMethodService : InputMethodService() {
             onKeyPressed = { key ->
                 // InputConnection is read at dispatch time because editors can change without
                 // recreating the IME process.
-                val committed = typingEngine.handle(key, currentInputConnection)
-                if (committed) recordLearningBoundary(key)
+                val connection = currentInputConnection
+                val beforeEdit = if (isTextEditKey(key)) editHistory.capture(connection) else null
+                val committed = typingEngine.handle(key, connection)
+                if (committed) {
+                    editHistory.record(beforeEdit, editHistory.capture(connection))
+                    recordLearningBoundary(key)
+                }
                 updateToolbarForKey(key)
                 // This only schedules a bounded background read after the synchronous commit.
                 // It never sits in front of the key-to-InputConnection path.
@@ -226,6 +234,7 @@ class KeyboardInputMethodService : InputMethodService() {
         refreshTheme()
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         keyboardState.setEditorInfo(attribute)
+        editHistory.clear()
         latestCompositionSnapshot = null
         nextWordPredictionRequested = false
         clearSuggestions()
@@ -239,6 +248,7 @@ class KeyboardInputMethodService : InputMethodService() {
         refreshTheme()
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         keyboardState.setEditorInfo(info)
+        editHistory.clear()
         latestCompositionSnapshot = null
         nextWordPredictionRequested = false
         clearSuggestions()
@@ -265,6 +275,7 @@ class KeyboardInputMethodService : InputMethodService() {
             candidatesStart,
             candidatesEnd,
         )
+        editHistory.onSelectionChanged(newSelStart, newSelEnd)
         compositionController.updateSelection(newSelStart, newSelEnd)
         requestCompositionSnapshot()
     }
@@ -274,6 +285,7 @@ class KeyboardInputMethodService : InputMethodService() {
         toolbarView?.cancelPendingInput()
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         clearSuggestions()
+        editHistory.clear()
         keyboardState.setEditorOptions(0)
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
         super.onFinishInput()
@@ -286,6 +298,7 @@ class KeyboardInputMethodService : InputMethodService() {
         toolbarView?.cancelPendingInput()
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         clearSuggestions()
+        editHistory.clear()
         super.onWindowHidden()
     }
 
@@ -299,6 +312,7 @@ class KeyboardInputMethodService : InputMethodService() {
         resizePanel = null
         voiceController?.close()
         voiceController = null
+        editHistory.clear()
         runCatching { unregisterReceiver(themeReceiver) }
         predictionController.close()
         glideController.close()
@@ -347,10 +361,16 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun onSuggestionSelected(candidate: SuggestionCandidate) {
         if (contentMode != ContentMode.KEYBOARD) return
         val snapshot = latestCompositionSnapshot ?: return
+        val connection = currentInputConnection
+        val beforeEdit = editHistory.capture(connection)
         learningController.recordAcceptedSuggestion(candidate, snapshot)
         predictionController.clear()
         toolbarView?.clearCandidates()
-        SuggestionSelectionEngine.apply(currentInputConnection, candidate, snapshot)
+        val result = SuggestionSelectionEngine.applyWithAutoSpace(connection, candidate, snapshot)
+        if (result.committed) {
+            editHistory.record(beforeEdit, editHistory.capture(connection))
+            nextWordPredictionRequested = result.nextWordReady
+        }
         requestCompositionSnapshot()
     }
 
@@ -366,7 +386,10 @@ class KeyboardInputMethodService : InputMethodService() {
                     requestCompositionSnapshot()
                     return@post
                 }
-                if (GlideCommitter.commit(currentInputConnection, gesture, snapshot, candidate.text)) {
+                val connection = currentInputConnection
+                val beforeEdit = editHistory.capture(connection)
+                if (GlideCommitter.commit(connection, gesture, snapshot, candidate.text)) {
+                    editHistory.record(beforeEdit, editHistory.capture(connection))
                     snapshot?.let {
                         learningController.recordWord(
                             word = candidate.text,
@@ -391,7 +414,10 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun onSpaceLongPressed() {
         // Space is committed immediately for the normal tap path. If the gesture becomes a
         // long press, remove that one just-committed space before opening the system picker.
-        currentInputConnection?.deleteSurroundingText(1, 0)
+        val connection = currentInputConnection
+        val beforeEdit = editHistory.capture(connection)
+        connection?.deleteSurroundingText(1, 0)
+        editHistory.record(beforeEdit, editHistory.capture(connection))
         nextWordPredictionRequested = false
         requestCompositionSnapshot()
         (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
@@ -402,8 +428,11 @@ class KeyboardInputMethodService : InputMethodService() {
         // The normal Space tap commits immediately. Once a horizontal swipe is confirmed,
         // remove only that Space so the editor-native cursor movement starts at the original
         // insertion point without changing surrounding text.
-        val deleted = currentInputConnection?.deleteSurroundingText(1, 0) == true
+        val connection = currentInputConnection
+        val beforeEdit = editHistory.capture(connection)
+        val deleted = connection?.deleteSurroundingText(1, 0) == true
         if (deleted) {
+            editHistory.record(beforeEdit, editHistory.capture(connection))
             nextWordPredictionRequested = false
             requestCompositionSnapshot()
         }
@@ -456,10 +485,12 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun onBackspaceSwipeFinished() {
         val selection = backspaceSelection ?: return
         val connection = currentInputConnection
+        val beforeEdit = editHistory.capture(connection)
         if (connection != null && selection.start < selection.anchor) {
             connection.setSelection(selection.start, selection.anchor)
             connection.commitText("", 1)
         }
+        editHistory.record(beforeEdit, editHistory.capture(connection))
         backspaceSelection = null
         requestCompositionSnapshot()
     }
@@ -540,6 +571,25 @@ class KeyboardInputMethodService : InputMethodService() {
             codePoint != '_'.code && codePoint != '\''.code
     }
 
+    private fun isTextEditKey(key: KeySpec): Boolean = when (key.type) {
+        KeyType.CHARACTER, KeyType.SPACE, KeyType.BACKSPACE, KeyType.ENTER -> true
+        else -> false
+    }
+
+    private fun performUndo() {
+        if (editHistory.undo(currentInputConnection)) {
+            toolsPanel?.invalidate()
+            latestCompositionSnapshot = null
+        }
+    }
+
+    private fun performRedo() {
+        if (editHistory.redo(currentInputConnection)) {
+            toolsPanel?.invalidate()
+            latestCompositionSnapshot = null
+        }
+    }
+
     private fun endsSentence(text: String): Boolean {
         val trimmed = text.trimEnd()
         if (trimmed.isEmpty()) return false
@@ -584,6 +634,7 @@ class KeyboardInputMethodService : InputMethodService() {
         voiceController = null
         contentMode = ContentMode.KEYBOARD
         resizePanel = null
+        toolsPanel = null
         refreshTheme()
         toolbarView?.showToolbarActions()
         val container = contentContainer ?: return
@@ -610,8 +661,19 @@ class KeyboardInputMethodService : InputMethodService() {
         toolbarView?.showToolbarActions()
         contentContainer?.let { container ->
             container.removeAllViews()
-            val tools = ToolsPanelView(this, ::onToolSelected)
+            val tools = ToolsPanelView(
+                context = this,
+                onToolSelected = ::onToolSelected,
+                isToolEnabled = { tool ->
+                    when (tool) {
+                        "undo" -> editHistory.canUndo()
+                        "redo" -> editHistory.canRedo()
+                        else -> true
+                    }
+                },
+            )
             tools.applyTheme(activeTheme)
+            toolsPanel = tools
             container.addView(tools, FrameLayout.LayoutParams(
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
@@ -627,6 +689,8 @@ class KeyboardInputMethodService : InputMethodService() {
             "resize" -> showResize()
             "themes" -> openThemeActivity()
             "emoji" -> showEmoji()
+            "undo" -> performUndo()
+            "redo" -> performRedo()
             else -> setKeyboardContent()
         }
     }
@@ -666,8 +730,11 @@ class KeyboardInputMethodService : InputMethodService() {
             context = this,
             usage = emojiUsageStore,
             onEmojiSelected = { emoji ->
+                val connection = currentInputConnection
+                val beforeEdit = editHistory.capture(connection)
                 emojiUsageStore.record(emoji)
-                currentInputConnection?.commitText(emoji, 1)
+                connection?.commitText(emoji, 1)
+                editHistory.record(beforeEdit, editHistory.capture(connection))
                 requestCompositionSnapshot()
             },
             onBack = ::setKeyboardContent,
@@ -716,7 +783,10 @@ class KeyboardInputMethodService : InputMethodService() {
             onCancel = { controller?.cancel() },
             onTranslate = { target -> controller?.translate(target) },
             onInsert = { text ->
-                currentInputConnection?.commitText(text, 1)
+                val connection = currentInputConnection
+                val beforeEdit = editHistory.capture(connection)
+                connection?.commitText(text, 1)
+                editHistory.record(beforeEdit, editHistory.capture(connection))
                 requestCompositionSnapshot()
             },
             onBack = ::setKeyboardContent,
