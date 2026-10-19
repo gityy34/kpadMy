@@ -92,6 +92,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var heightBeforeResizeDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
     private var nextWordPredictionRequested = false
     private var backspaceSelection: BackspaceSelection? = null
+    private var internalEditDepth = 0
     private val mainHandler = Handler(Looper.getMainLooper())
     private val themeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -161,11 +162,12 @@ class KeyboardInputMethodService : InputMethodService() {
                 // recreating the IME process.
                 val connection = currentInputConnection
                 val beforeEdit = if (isTextEditKey(key)) editHistory.capture(connection) else null
-                val committed = typingEngine.handle(key, connection)
-                if (committed) {
-                    editHistory.record(beforeEdit, editHistory.capture(connection))
-                    recordLearningBoundary(key)
+                val committed = withInternalEdit {
+                    val result = typingEngine.handle(key, connection)
+                    if (result) editHistory.record(beforeEdit, editHistory.capture(connection))
+                    result
                 }
+                if (committed) recordLearningBoundary(key)
                 updateToolbarForKey(key)
                 // This only schedules a bounded background read after the synchronous commit.
                 // It never sits in front of the key-to-InputConnection path.
@@ -275,7 +277,7 @@ class KeyboardInputMethodService : InputMethodService() {
             candidatesStart,
             candidatesEnd,
         )
-        editHistory.onSelectionChanged(newSelStart, newSelEnd)
+        if (internalEditDepth == 0) editHistory.onSelectionChanged(newSelStart, newSelEnd)
         compositionController.updateSelection(newSelStart, newSelEnd)
         requestCompositionSnapshot()
     }
@@ -366,7 +368,9 @@ class KeyboardInputMethodService : InputMethodService() {
         learningController.recordAcceptedSuggestion(candidate, snapshot)
         predictionController.clear()
         toolbarView?.clearCandidates()
-        val result = SuggestionSelectionEngine.applyWithAutoSpace(connection, candidate, snapshot)
+        val result = withInternalEdit {
+            SuggestionSelectionEngine.applyWithAutoSpace(connection, candidate, snapshot)
+        }
         if (result.committed) {
             editHistory.record(beforeEdit, editHistory.capture(connection))
             nextWordPredictionRequested = result.nextWordReady
@@ -388,7 +392,10 @@ class KeyboardInputMethodService : InputMethodService() {
                 }
                 val connection = currentInputConnection
                 val beforeEdit = editHistory.capture(connection)
-                if (GlideCommitter.commit(connection, gesture, snapshot, candidate.text)) {
+                val committed = withInternalEdit {
+                    GlideCommitter.commit(connection, gesture, snapshot, candidate.text)
+                }
+                if (committed) {
                     editHistory.record(beforeEdit, editHistory.capture(connection))
                     snapshot?.let {
                         learningController.recordWord(
@@ -416,7 +423,7 @@ class KeyboardInputMethodService : InputMethodService() {
         // long press, remove that one just-committed space before opening the system picker.
         val connection = currentInputConnection
         val beforeEdit = editHistory.capture(connection)
-        connection?.deleteSurroundingText(1, 0)
+        withInternalEdit { connection?.deleteSurroundingText(1, 0) }
         editHistory.record(beforeEdit, editHistory.capture(connection))
         nextWordPredictionRequested = false
         requestCompositionSnapshot()
@@ -430,7 +437,7 @@ class KeyboardInputMethodService : InputMethodService() {
         // insertion point without changing surrounding text.
         val connection = currentInputConnection
         val beforeEdit = editHistory.capture(connection)
-        val deleted = connection?.deleteSurroundingText(1, 0) == true
+        val deleted = withInternalEdit { connection?.deleteSurroundingText(1, 0) == true }
         if (deleted) {
             editHistory.record(beforeEdit, editHistory.capture(connection))
             nextWordPredictionRequested = false
@@ -486,9 +493,11 @@ class KeyboardInputMethodService : InputMethodService() {
         val selection = backspaceSelection ?: return
         val connection = currentInputConnection
         val beforeEdit = editHistory.capture(connection)
-        if (connection != null && selection.start < selection.anchor) {
-            connection.setSelection(selection.start, selection.anchor)
-            connection.commitText("", 1)
+        withInternalEdit {
+            if (connection != null && selection.start < selection.anchor) {
+                connection.setSelection(selection.start, selection.anchor)
+                connection.commitText("", 1)
+            }
         }
         editHistory.record(beforeEdit, editHistory.capture(connection))
         backspaceSelection = null
@@ -577,16 +586,27 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun performUndo() {
-        if (editHistory.undo(currentInputConnection)) {
+        val undone = withInternalEdit { editHistory.undo(currentInputConnection) }
+        if (undone) {
             toolsPanel?.invalidate()
             latestCompositionSnapshot = null
         }
     }
 
     private fun performRedo() {
-        if (editHistory.redo(currentInputConnection)) {
+        val redone = withInternalEdit { editHistory.redo(currentInputConnection) }
+        if (redone) {
             toolsPanel?.invalidate()
             latestCompositionSnapshot = null
+        }
+    }
+
+    private fun <T> withInternalEdit(block: () -> T): T {
+        internalEditDepth++
+        return try {
+            block()
+        } finally {
+            internalEditDepth--
         }
     }
 
@@ -733,7 +753,7 @@ class KeyboardInputMethodService : InputMethodService() {
                 val connection = currentInputConnection
                 val beforeEdit = editHistory.capture(connection)
                 emojiUsageStore.record(emoji)
-                connection?.commitText(emoji, 1)
+                withInternalEdit { connection?.commitText(emoji, 1) }
                 editHistory.record(beforeEdit, editHistory.capture(connection))
                 requestCompositionSnapshot()
             },
@@ -785,7 +805,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onInsert = { text ->
                 val connection = currentInputConnection
                 val beforeEdit = editHistory.capture(connection)
-                connection?.commitText(text, 1)
+                withInternalEdit { connection?.commitText(text, 1) }
                 editHistory.record(beforeEdit, editHistory.capture(connection))
                 requestCompositionSnapshot()
             },
