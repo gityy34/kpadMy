@@ -74,11 +74,11 @@ class TypingEngineTest {
             when (method.name) {
                 "performEditorAction" -> false
                 "sendKeyEvent" -> {
-                    calls += "key:\${(args?.get(0) as android.view.KeyEvent).action}"
+                    calls += "key:${(args?.get(0) as android.view.KeyEvent).action}"
                     true
                 }
                 "commitText" -> {
-                    calls += "commit:\${args?.get(0)}"
+                    calls += "commit:${args?.get(0)}"
                     true
                 }
                 else -> if (method.returnType == Boolean::class.javaPrimitiveType) true else null
