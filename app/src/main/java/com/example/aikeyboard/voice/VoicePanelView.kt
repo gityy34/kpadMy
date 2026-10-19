@@ -74,9 +74,9 @@ class VoicePanelView(
         content.setPadding(dp(6), dp(4), dp(6), dp(8))
         scrollView.isFillViewport = true
         scrollView.overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
-        scrollView.addView(content, ScrollView.LayoutParams(
-            ScrollView.LayoutParams.MATCH_PARENT,
-            ScrollView.LayoutParams.WRAP_CONTENT,
+        scrollView.addView(content, FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.WRAP_CONTENT,
         ))
         addView(scrollView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
