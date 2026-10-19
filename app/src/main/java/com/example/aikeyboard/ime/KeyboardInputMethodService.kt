@@ -155,6 +155,7 @@ class KeyboardInputMethodService : InputMethodService() {
                 // This only schedules a bounded background read after the synchronous commit.
                 // It never sits in front of the key-to-InputConnection path.
                 requestCompositionSnapshot()
+                committed
             },
             glideEnabled = { glideTypingEnabled },
             onGlideStarted = {
@@ -163,6 +164,7 @@ class KeyboardInputMethodService : InputMethodService() {
             },
             onGlideCompleted = ::onGlideCompleted,
             onGlideCancelled = ::onGlideCancelled,
+            onSpaceLongPressed = ::onSpaceLongPressed,
         )
         keyboardView = view
         view.applyTheme(activeTheme)
@@ -357,6 +359,15 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun onGlideCancelled(gesture: GlideGesture) {
         GlideCommitter.removeProvisional(currentInputConnection, gesture.provisionalText)
         preGestureSnapshot = null
+    }
+
+    private fun onSpaceLongPressed() {
+        // Space is committed immediately for the normal tap path. If the gesture becomes a
+        // long press, remove that one just-committed space before opening the system picker.
+        currentInputConnection?.deleteSurroundingText(1, 0)
+        nextWordPredictionRequested = false
+        requestCompositionSnapshot()
+        showInputMethodPicker()
     }
 
     private fun onSuggestionLongPressed(candidate: SuggestionCandidate) {
