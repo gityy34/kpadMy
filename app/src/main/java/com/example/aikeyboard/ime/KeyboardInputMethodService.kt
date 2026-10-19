@@ -9,6 +9,7 @@ import android.graphics.Color
 import android.os.Build
 import android.view.View
 import android.view.inputmethod.EditorInfo
+import android.view.inputmethod.InputMethodManager
 import android.os.Handler
 import android.os.Looper
 import android.view.Gravity
@@ -367,7 +368,8 @@ class KeyboardInputMethodService : InputMethodService() {
         currentInputConnection?.deleteSurroundingText(1, 0)
         nextWordPredictionRequested = false
         requestCompositionSnapshot()
-        showInputMethodPicker()
+        (getSystemService(INPUT_METHOD_SERVICE) as? InputMethodManager)
+            ?.showInputMethodPicker()
     }
 
     private fun onSuggestionLongPressed(candidate: SuggestionCandidate) {
