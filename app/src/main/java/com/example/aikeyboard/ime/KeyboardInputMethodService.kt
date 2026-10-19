@@ -329,7 +329,7 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun requestCompositionSnapshot() {
         if (contentMode != ContentMode.KEYBOARD) return
-        if (keyboardState.editorInputState.isSensitive) {
+        if (keyboardState.editorInputState.suppressSuggestions) {
             clearSuggestions()
             toolbarView?.showToolbarActions()
             return
