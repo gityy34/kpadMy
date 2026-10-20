@@ -82,6 +82,7 @@ class KeyboardToolbarView(
 
     init {
         isClickable = true
+        contentDescription = "Keyboard toolbar. Tools menu and Voice typing."
         setBackgroundColor(BACKGROUND_COLOR)
     }
 
