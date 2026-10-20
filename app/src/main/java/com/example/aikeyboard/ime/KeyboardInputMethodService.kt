@@ -513,7 +513,7 @@ class KeyboardInputMethodService : InputMethodService() {
                 predictionController.request(snapshot) { result ->
                     mainHandler.post {
                         val current = latestCompositionSnapshot
-                        if (contentMode != ContentMode.KEYBOARD &&
+                        if (contentMode != ContentMode.KEYBOARD ||
                             toolbarView?.isSuggestionsMode() != true
                         ) {
                             return@post
