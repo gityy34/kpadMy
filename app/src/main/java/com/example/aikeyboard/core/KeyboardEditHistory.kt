@@ -17,11 +17,18 @@ class KeyboardEditHistory(private val maxEntries: Int = 50) {
     private val redoStack = ArrayDeque<EditOperation>()
     private var boundConnection: InputConnection? = null
     private var expectedSelection: Selection? = null
+    private var sessionKey: String? = null
+
+    fun beginSession(key: String) {
+        if (sessionKey != key) {
+            clear()
+            sessionKey = key
+        }
+    }
 
     fun bind(inputConnection: InputConnection?) {
         if (boundConnection !== inputConnection) {
             boundConnection = inputConnection
-            clear()
         }
     }
 

@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.aikeyboard"
         minSdk = 24
         targetSdk = 35
-    versionCode = 7
-    versionName = "0.7.0"
+        versionCode = 16
+        versionName = "1.6.0"
     }
 
     buildTypes {
@@ -39,3 +39,5 @@ dependencies {
     // Phase 1 intentionally has no runtime dependencies on prediction, AI, or UI toolkits.
     testImplementation("junit:junit:4.13.2")
 }
+
+// v15 release build: bounded single-line suggestion rendering and compact toolbar controls.
