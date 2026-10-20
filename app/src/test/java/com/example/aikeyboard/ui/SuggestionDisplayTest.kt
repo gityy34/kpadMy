@@ -26,5 +26,6 @@ class SuggestionDisplayTest {
         assertEquals(listOf("Pom..ate", "Wat..lon", "Str..rry"), displayed)
         assertEquals("Pomegranate", words[0])
         assertEquals("123..789", SuggestionDisplay.displayText("123456789"))
+        assertEquals("کیا..کیا", SuggestionDisplay.displayText("کیاکیاکیا"))
     }
 }
