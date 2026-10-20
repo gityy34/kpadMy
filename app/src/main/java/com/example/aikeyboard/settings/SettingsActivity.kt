@@ -471,7 +471,7 @@ class SettingsActivity : Activity() {
                 row.addView(
                     SettingsChevronView(this).apply {
                         lineColor = activeTheme.accentColor
-                        contentDescription = "Open setting",
+                        contentDescription = "Open setting"
                     },
                     LinearLayout.LayoutParams(dp(28), height),
                 )
@@ -493,7 +493,7 @@ class SettingsActivity : Activity() {
                 row.addView(
                     SettingsChevronView(this).apply {
                         lineColor = activeTheme.accentColor
-                        contentDescription = "Open setting",
+                        contentDescription = "Open setting"
                     },
                     LinearLayout.LayoutParams(dp(28), height),
                 )
