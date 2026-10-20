@@ -332,12 +332,17 @@ class KeyboardToolbarView(
             canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
                 centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
         }
+        // Recreated from the supplied reference as a compact outline vector. The artwork stays
+        // inside the fixed microphone cell; the cell itself remains the full touch target.
         iconStrokePaint.color = theme.textColor
+        iconStrokePaint.style = Paint.Style.STROKE
+        iconStrokePaint.strokeWidth = 1.9f * density
+        iconStrokePaint.strokeCap = Paint.Cap.ROUND
+        iconStrokePaint.strokeJoin = Paint.Join.ROUND
         val centerY = height / 2f
-        val capsuleWidth = 5.5f * density
-        val capsuleTop = centerY - 10f * density
-        val capsuleBottom = centerY + 2f * density
-        iconStrokePaint.style = Paint.Style.FILL
+        val capsuleWidth = 5.3f * density
+        val capsuleTop = centerY - 11f * density
+        val capsuleBottom = centerY + 3f * density
         canvas.drawRoundRect(
             centerX - capsuleWidth,
             capsuleTop,
@@ -347,16 +352,14 @@ class KeyboardToolbarView(
             capsuleWidth,
             iconStrokePaint,
         )
-        iconStrokePaint.style = Paint.Style.STROKE
-        iconStrokePaint.strokeWidth = 2.1f * density
-        val arcLeft = centerX - 11f * density
-        val arcTop = centerY - 4f * density
-        val arcRight = centerX + 11f * density
-        val arcBottom = centerY + 8f * density
+        val arcLeft = centerX - 10.5f * density
+        val arcTop = centerY - 5f * density
+        val arcRight = centerX + 10.5f * density
+        val arcBottom = centerY + 9f * density
         canvas.drawArc(arcLeft, arcTop, arcRight, arcBottom, 0f, 180f, false, iconStrokePaint)
-        canvas.drawLine(centerX, arcBottom, centerX, centerY + 13f * density, iconStrokePaint)
-        canvas.drawLine(centerX - 7f * density, centerY + 13f * density,
-            centerX + 7f * density, centerY + 13f * density, iconStrokePaint)
+        canvas.drawLine(centerX, arcBottom, centerX, centerY + 15f * density, iconStrokePaint)
+        canvas.drawLine(centerX - 6.5f * density, centerY + 15f * density,
+            centerX + 6.5f * density, centerY + 15f * density, iconStrokePaint)
         iconStrokePaint.strokeWidth = 2.2f * density
     }
 
