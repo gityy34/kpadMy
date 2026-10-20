@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.aikeyboard"
         minSdk = 24
         targetSdk = 35
-        versionCode = 11
-        versionName = "1.1.0"
+        versionCode = 13
+        versionName = "1.3.0"
     }
 
     buildTypes {
@@ -40,5 +40,4 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
-// v11 release build: Resize safe-geometry update.
-// Release workflow trigger is intentional.
+// v13 release build: Resize Done persistence/IME restoration fix.

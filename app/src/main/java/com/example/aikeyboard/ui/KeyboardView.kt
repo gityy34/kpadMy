@@ -41,9 +41,11 @@ class KeyboardView(
     private val onSpaceCursorStarted: () -> Boolean = { false },
     private val onSpaceCursorMoved: (Int) -> Unit = {},
     private val onBackspaceSwipeStarted: () -> Boolean = { false },
-    private val onBackspaceSwipeMoved: () -> Unit = {},
+    private val onBackspaceSwipeMoved: (Float) -> Unit = {},
     private val onBackspaceSwipeFinished: () -> Unit = {},
     private val onBackspaceSwipeCancelled: () -> Unit = {},
+    private val fontScale: () -> Float = { 1f },
+    private val showLanguageSwitch: () -> Boolean = { false },
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -100,12 +102,15 @@ class KeyboardView(
     }
 
     private var keyboardLayout: KeyboardLayout = layoutProvider.layoutFor(state.language, state.mode)
+    private var lastBaseLayout: KeyboardLayout = keyboardLayout
+    private var lastLanguageSwitchVisible = false
     private var rowMetrics: Array<RowMetrics> = emptyArray()
     private var pressedRow = -1
     private var pressedColumn = -1
     private var backspaceRepeatCount = 0
     private var backspaceSwipeActive = false
     private var backspaceLastX = 0f
+    private var backspaceSwipeStartX = 0f
     private var backspaceStartY = 0f
     private var backspaceAccumulatedLeft = 0f
     private var spaceCommitted = false
@@ -161,9 +166,9 @@ class KeyboardView(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val currentLayout = layoutProvider.layoutFor(state.language, state.mode)
-        if (currentLayout !== keyboardLayout) {
-            keyboardLayout = currentLayout
+        val previousLayout = keyboardLayout
+        val currentLayout = resolvedLayout()
+        if (currentLayout !== previousLayout) {
             rebuildMetrics()
         }
 
@@ -212,7 +217,8 @@ class KeyboardView(
                 val label = key.labelFor(shifted)
                 textPaint.color = theme.textColor
                 val rowHeightPx = (metrics.bottom - metrics.top - keyInset * 2f).coerceAtLeast(1f)
-                textPaint.textSize = keyTextSizeSp(key, rowHeightPx) * scaledDensity
+                textPaint.textSize = keyTextSizeSp(key, rowHeightPx) *
+                    fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE) * scaledDensity
                 val textWidth = textPaint.measureText(label)
                 textPaint.getFontMetrics(fontMetrics)
                 val baseline = (metrics.top + metrics.bottom - fontMetrics.ascent - fontMetrics.descent) / 2f
@@ -260,6 +266,7 @@ class KeyboardView(
                     if (hit.type == KeyType.BACKSPACE) {
                         backspaceRepeatCount = 0
                         backspaceLastX = event.x
+                        backspaceSwipeStartX = event.x
                         backspaceStartY = event.y
                         backspaceAccumulatedLeft = 0f
                         repeatHandler.postDelayed(repeatRunnable, BACKSPACE_REPEAT_START_DELAY_MS)
@@ -339,7 +346,7 @@ class KeyboardView(
 
     fun currentGlideGeometry(): List<GlideKeyGeometry> = glideGeometry
 
-    fun currentRowCount(): Int = layoutProvider.layoutFor(state.language, state.mode).rows.size
+    fun currentRowCount(): Int = resolvedLayout().rows.size
 
     /**
      * Returns the actual visual key block height for the current row count. The outer IME may
@@ -646,6 +653,7 @@ class KeyboardView(
         }
         backspaceRepeatCount = 0
         backspaceLastX = 0f
+        backspaceSwipeStartX = 0f
         backspaceStartY = 0f
         backspaceAccumulatedLeft = 0f
         spaceCommitted = false
@@ -674,7 +682,7 @@ class KeyboardView(
 
     private fun updateBackspaceSwipe(x: Float, y: Float) {
         if (!backspaceSwipeActive) {
-            val leftDistance = backspaceLastX - x
+            val leftDistance = backspaceSwipeStartX - x
             val verticalDistance = kotlin.math.abs(y - backspaceStartY)
             if (leftDistance < BACKSPACE_SWIPE_START_DISTANCE_DP * density ||
                 leftDistance < verticalDistance
@@ -687,18 +695,37 @@ class KeyboardView(
             backspaceSwipeActive = true
             backspaceAccumulatedLeft = 0f
             backspaceLastX = x
-            onBackspaceSwipeMoved()
+            onBackspaceSwipeMoved(leftDistance)
             return
         }
 
-        val leftDelta = backspaceLastX - x
         backspaceLastX = x
-        backspaceAccumulatedLeft += leftDelta
-        val step = BACKSPACE_SWIPE_STEP_DP * density
-        while (backspaceAccumulatedLeft >= step) {
-            onBackspaceSwipeMoved()
-            backspaceAccumulatedLeft -= step
+        // Absolute travel keeps the visible selection reversible when the finger moves right.
+        onBackspaceSwipeMoved((backspaceSwipeStartX - x).coerceAtLeast(0f))
+    }
+
+    private fun resolvedLayout(): KeyboardLayout {
+        val base = layoutProvider.layoutFor(state.language, state.mode)
+        val visible = showLanguageSwitch()
+        if (base !== lastBaseLayout || visible != lastLanguageSwitchVisible) {
+            lastBaseLayout = base
+            lastLanguageSwitchVisible = visible
+            keyboardLayout = if (visible) withLanguageSwitch(base) else base
         }
+        return keyboardLayout
+    }
+
+    private fun withLanguageSwitch(base: KeyboardLayout): KeyboardLayout {
+        val lastRow = base.rows.lastOrNull() ?: return base
+        if (lastRow.keys.any { it.type == KeyType.LANGUAGE_SWITCH }) return base
+        val insertAt = lastRow.keys.indexOfFirst { it.type == KeyType.MODE_SWITCH }
+            .let { if (it < 0) 0 else it + 1 }
+        val keys = lastRow.keys.toMutableList().apply {
+            add(insertAt, KeySpec.languageSwitch("🌐"))
+        }.toTypedArray()
+        val rows = base.rows.copyOf()
+        rows[rows.lastIndex] = com.example.aikeyboard.core.KeyboardRow(keys)
+        return KeyboardLayout(rows)
     }
 
     private fun updateSpaceCursor(x: Float, y: Float) {
@@ -759,6 +786,8 @@ class KeyboardView(
         const val MAX_BOTTOM_ROW_HEIGHT_DP = 92f
         const val MIN_LABEL_SCALE = 0.9f
         const val MAX_LABEL_SCALE = 1.25f
+        const val MIN_FONT_SCALE = 0.75f
+        const val MAX_FONT_SCALE = 1.35f
         const val SHIFT_KEY_WIDTH_DP = 48f
         const val BACKSPACE_KEY_WIDTH_DP = 49f
         const val SPACE_KEY_WIDTH_DP = 138f
