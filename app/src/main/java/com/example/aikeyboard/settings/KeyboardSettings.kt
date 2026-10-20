@@ -44,6 +44,18 @@ interface KeyboardSettings {
 
     fun setGlideTypingEnabled(enabled: Boolean) = Unit
 
+    fun fontSizeLevel(): Int = DEFAULT_FONT_SIZE_LEVEL
+
+    fun setFontSizeLevel(level: Int) = Unit
+
+    fun emojiSizeLevel(): Int = DEFAULT_EMOJI_SIZE_LEVEL
+
+    fun setEmojiSizeLevel(level: Int) = Unit
+
+    fun showLanguageSwitchKey(): Boolean = true
+
+    fun setShowLanguageSwitchKey(show: Boolean) = Unit
+
     fun keyboardHeightDp(): Int = DEFAULT_KEYBOARD_HEIGHT_DP
 
     fun setKeyboardHeightDp(heightDp: Int) = Unit
@@ -64,7 +76,20 @@ interface KeyboardSettings {
 
     companion object {
         const val DEFAULT_KEYBOARD_HEIGHT_DP = 270
+        const val SIZE_LEVEL_COUNT = 7
+        const val DEFAULT_FONT_SIZE_LEVEL = 3
+        const val DEFAULT_EMOJI_SIZE_LEVEL = 3
         val DEFAULT_TOOLBAR_ORDER = listOf("settings", "search", "resize")
+
+        val FONT_SIZE_SCALES = floatArrayOf(0.85f, 0.9f, 0.95f, 1f, 1.08f, 1.18f, 1.28f)
+        val EMOJI_SIZE_SCALES = floatArrayOf(0.78f, 0.86f, 0.94f, 1f, 1.08f, 1.18f, 1.28f)
+        const val ACTION_SETTINGS_CHANGED = "com.example.aikeyboard.SETTINGS_CHANGED"
+
+        fun fontScaleForLevel(level: Int): Float =
+            FONT_SIZE_SCALES[level.coerceIn(0, FONT_SIZE_SCALES.lastIndex)]
+
+        fun emojiScaleForLevel(level: Int): Float =
+            EMOJI_SIZE_SCALES[level.coerceIn(0, EMOJI_SIZE_SCALES.lastIndex)]
     }
 }
 
@@ -91,6 +116,37 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
 
     override fun setGlideTypingEnabled(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_GLIDE_TYPING, enabled).apply()
+    }
+
+    override fun fontSizeLevel(): Int = preferences.getInt(
+        KEY_FONT_SIZE_LEVEL,
+        KeyboardSettings.DEFAULT_FONT_SIZE_LEVEL,
+    ).coerceIn(0, KeyboardSettings.SIZE_LEVEL_COUNT - 1)
+
+    override fun setFontSizeLevel(level: Int) {
+        preferences.edit().putInt(
+            KEY_FONT_SIZE_LEVEL,
+            level.coerceIn(0, KeyboardSettings.SIZE_LEVEL_COUNT - 1),
+        ).apply()
+    }
+
+    override fun emojiSizeLevel(): Int = preferences.getInt(
+        KEY_EMOJI_SIZE_LEVEL,
+        KeyboardSettings.DEFAULT_EMOJI_SIZE_LEVEL,
+    ).coerceIn(0, KeyboardSettings.SIZE_LEVEL_COUNT - 1)
+
+    override fun setEmojiSizeLevel(level: Int) {
+        preferences.edit().putInt(
+            KEY_EMOJI_SIZE_LEVEL,
+            level.coerceIn(0, KeyboardSettings.SIZE_LEVEL_COUNT - 1),
+        ).apply()
+    }
+
+    override fun showLanguageSwitchKey(): Boolean =
+        preferences.getBoolean(KEY_SHOW_LANGUAGE_SWITCH, true)
+
+    override fun setShowLanguageSwitchKey(show: Boolean) {
+        preferences.edit().putBoolean(KEY_SHOW_LANGUAGE_SWITCH, show).apply()
     }
 
     override fun keyboardHeightDp(): Int =
@@ -155,6 +211,9 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         private const val KEY_START_IN_SYMBOLS = "start_in_symbols"
         private const val KEY_PERSONALIZED_SUGGESTIONS = "personalized_suggestions"
         private const val KEY_GLIDE_TYPING = "glide_typing"
+        private const val KEY_FONT_SIZE_LEVEL = "font_size_level"
+        private const val KEY_EMOJI_SIZE_LEVEL = "emoji_size_level"
+        private const val KEY_SHOW_LANGUAGE_SWITCH = "show_language_switch_key"
         private const val KEY_KEYBOARD_HEIGHT_DP = "keyboard_height_dp"
         private const val KEY_RESIZE_HEIGHT_DP = "resize_height_dp"
         private const val KEY_RESIZE_TOP_OFFSET_DP = "resize_top_offset_dp"
