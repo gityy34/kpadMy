@@ -9,11 +9,17 @@ data class ResizeConfiguration(
     val keyboardHeightDp: Int = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP,
     val topOffsetDp: Int = 0,
     val bottomSpaceDp: Int = 0,
+    /** Visual position of the lower resize boundary inside the reserved area. */
+    val bottomBoundaryOffsetDp: Int = 0,
 ) {
     fun clamped(): ResizeConfiguration = copy(
         keyboardHeightDp = keyboardHeightDp.coerceIn(MIN_KEYBOARD_HEIGHT_DP, MAX_KEYBOARD_HEIGHT_DP),
         topOffsetDp = topOffsetDp.coerceIn(0, MAX_MOVE_OFFSET_DP),
         bottomSpaceDp = bottomSpaceDp.coerceIn(0, MAX_BOTTOM_SPACE_DP),
+        bottomBoundaryOffsetDp = bottomBoundaryOffsetDp.coerceIn(
+            MIN_BOTTOM_BOUNDARY_OFFSET_DP,
+            MAX_BOTTOM_BOUNDARY_OFFSET_DP,
+        ),
     )
 
     companion object {
@@ -21,6 +27,8 @@ data class ResizeConfiguration(
         const val MAX_KEYBOARD_HEIGHT_DP = 360
         const val MAX_MOVE_OFFSET_DP = 120
         const val MAX_BOTTOM_SPACE_DP = 180
+        const val MIN_BOTTOM_BOUNDARY_OFFSET_DP = -96
+        const val MAX_BOTTOM_BOUNDARY_OFFSET_DP = 180
     }
 }
 
@@ -103,6 +111,10 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
             keyboardHeightDp = preferences.getInt(KEY_RESIZE_HEIGHT_DP + suffix, legacyHeight),
             topOffsetDp = preferences.getInt(KEY_RESIZE_TOP_OFFSET_DP + suffix, 0),
             bottomSpaceDp = preferences.getInt(KEY_RESIZE_BOTTOM_SPACE_DP + suffix, 0),
+            bottomBoundaryOffsetDp = preferences.getInt(
+                KEY_RESIZE_BOUNDARY_OFFSET_DP + suffix,
+                0,
+            ),
         ).clamped()
     }
 
@@ -116,6 +128,7 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
             .putInt(KEY_RESIZE_HEIGHT_DP + suffix, value.keyboardHeightDp)
             .putInt(KEY_RESIZE_TOP_OFFSET_DP + suffix, value.topOffsetDp)
             .putInt(KEY_RESIZE_BOTTOM_SPACE_DP + suffix, value.bottomSpaceDp)
+            .putInt(KEY_RESIZE_BOUNDARY_OFFSET_DP + suffix, value.bottomBoundaryOffsetDp)
             .putInt(KEY_KEYBOARD_HEIGHT_DP, value.keyboardHeightDp)
             .apply()
     }
@@ -146,6 +159,7 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         private const val KEY_RESIZE_HEIGHT_DP = "resize_height_dp"
         private const val KEY_RESIZE_TOP_OFFSET_DP = "resize_top_offset_dp"
         private const val KEY_RESIZE_BOTTOM_SPACE_DP = "resize_bottom_space_dp"
+        private const val KEY_RESIZE_BOUNDARY_OFFSET_DP = "resize_boundary_offset_dp"
         private const val KEY_TOOLBAR_ORDER = "toolbar_order"
     }
 }
