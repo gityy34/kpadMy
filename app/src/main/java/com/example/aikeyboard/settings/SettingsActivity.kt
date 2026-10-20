@@ -255,9 +255,18 @@ class SettingsActivity : Activity() {
     private fun openSearchResult(categoryId: String, entryId: String) {
         (getSystemService(Context.INPUT_METHOD_SERVICE) as? InputMethodManager)
             ?.hideSoftInputFromWindow(search.windowToken, 0)
+        val target = categories.firstOrNull { it.id == categoryId }
+            ?.entries
+            ?.firstOrNull { it.id == entryId }
         currentCategoryId = null
         search.setText("")
-        renderCategory(categoryId, entryId)
+        if (target?.action != null) {
+            // Action results open their real destination immediately; informational and toggle
+            // results remain on their category page with the exact row highlighted.
+            performAction(target.action)
+        } else {
+            renderCategory(categoryId, entryId)
+        }
     }
 
     private fun addSectionHeader(title: String, description: String) {
