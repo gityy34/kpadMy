@@ -50,6 +50,8 @@ class ClipboardPanelView(
         orientation = VERTICAL
         clipChildren = true
         clipToPadding = true
+        grid.columnCount = 2
+        grid.useDefaultMargins = false
         buildHeader()
         scroll.isFillViewport = true
         scroll.clipToPadding = false
@@ -186,6 +188,7 @@ class ClipboardPanelView(
     }
 
     private fun selectTab(next: Tab) {
+        loading = false
         tab = next
         selectedItem = null
         actionBar.visibility = View.GONE
@@ -297,8 +300,8 @@ class ClipboardPanelView(
                 }
             }
             val params = GridLayout.LayoutParams(
-                GridLayout.spec(index % 2, 1f),
                 GridLayout.spec(index / 2),
+                GridLayout.spec(index % 2, 1f),
             ).apply {
                 width = 0
                 height = dp(66)
