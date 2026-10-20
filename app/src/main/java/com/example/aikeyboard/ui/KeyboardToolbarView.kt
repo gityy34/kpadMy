@@ -333,35 +333,68 @@ class KeyboardToolbarView(
             canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
                 centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
         }
-        // Recreated from the supplied reference as a compact outline vector. The artwork stays
-        // inside the fixed microphone cell; the cell itself remains the full touch target.
+
+        // Compact vector recreation of the supplied reference: an outlined capsule,
+        // a broad outer U-curve, centered stem, and rounded base. The glow is painted
+        // with the current theme foreground, never with a bitmap or fixed purple color.
+        val d = density
+        val centerY = height / 2f
+        val bodyWidth = 7.2f * d
+        val bodyTop = centerY - 16f * d
+        val bodyBottom = centerY + 5f * d
+        val bodyRadius = bodyWidth
+        val arcLeft = centerX - 13.5f * d
+        val arcTop = centerY - 7f * d
+        val arcRight = centerX + 13.5f * d
+        val arcBottom = centerY + 11f * d
+        val stemBottom = centerY + 16f * d
+        val baseHalfWidth = 8f * d
+
+        fun drawReferenceGeometry() {
+            canvas.drawRoundRect(
+                centerX - bodyWidth,
+                bodyTop,
+                centerX + bodyWidth,
+                bodyBottom,
+                bodyRadius,
+                bodyRadius,
+                iconStrokePaint,
+            )
+            canvas.drawArc(
+                arcLeft,
+                arcTop,
+                arcRight,
+                arcBottom,
+                0f,
+                180f,
+                false,
+                iconStrokePaint,
+            )
+            canvas.drawLine(centerX, arcBottom, centerX, stemBottom, iconStrokePaint)
+            canvas.drawLine(
+                centerX - baseHalfWidth,
+                stemBottom,
+                centerX + baseHalfWidth,
+                stemBottom,
+                iconStrokePaint,
+            )
+        }
+
         iconStrokePaint.color = theme.textColor
         iconStrokePaint.style = Paint.Style.STROKE
-        iconStrokePaint.strokeWidth = 1.9f * density
         iconStrokePaint.strokeCap = Paint.Cap.ROUND
         iconStrokePaint.strokeJoin = Paint.Join.ROUND
-        val centerY = height / 2f
-        val capsuleWidth = 5.3f * density
-        val capsuleTop = centerY - 11f * density
-        val capsuleBottom = centerY + 3f * density
-        canvas.drawRoundRect(
-            centerX - capsuleWidth,
-            capsuleTop,
-            centerX + capsuleWidth,
-            capsuleBottom,
-            capsuleWidth,
-            capsuleWidth,
-            iconStrokePaint,
-        )
-        val arcLeft = centerX - 10.5f * density
-        val arcTop = centerY - 5f * density
-        val arcRight = centerX + 10.5f * density
-        val arcBottom = centerY + 9f * density
-        canvas.drawArc(arcLeft, arcTop, arcRight, arcBottom, 0f, 180f, false, iconStrokePaint)
-        canvas.drawLine(centerX, arcBottom, centerX, centerY + 15f * density, iconStrokePaint)
-        canvas.drawLine(centerX - 6.5f * density, centerY + 15f * density,
-            centerX + 6.5f * density, centerY + 15f * density, iconStrokePaint)
-        iconStrokePaint.strokeWidth = 2.2f * density
+
+        // A restrained theme-colored halo keeps the reference's neon character without
+        // forcing purple on light/dark themes.
+        iconStrokePaint.alpha = 42
+        iconStrokePaint.strokeWidth = 5.2f * d
+        drawReferenceGeometry()
+
+        iconStrokePaint.alpha = 255
+        iconStrokePaint.strokeWidth = 1.9f * d
+        drawReferenceGeometry()
+        iconStrokePaint.strokeWidth = 2.2f * d
     }
 
     private fun drawText(canvas: Canvas, value: String, left: Float, right: Float) {
