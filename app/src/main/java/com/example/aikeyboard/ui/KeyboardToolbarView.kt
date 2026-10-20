@@ -55,6 +55,7 @@ class KeyboardToolbarView(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    private val micButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var theme = KeyboardTheme.SOLID_WHITE
     private val fixedSuggestionSlotCount = 3
     private val handler = Handler(Looper.getMainLooper())
@@ -93,6 +94,7 @@ class KeyboardToolbarView(
         dividerPaint.color = value.borderColor
         textPaint.color = value.textColor
         iconPaint.color = value.textColor
+        micButtonPaint.color = value.keyColor
         invalidate()
     }
 
@@ -334,15 +336,25 @@ class KeyboardToolbarView(
                 centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
         }
 
-        // Compact vector recreation of the supplied reference: an outlined capsule,
-        // a broad outer U-curve, centered stem, and rounded base. The glow is painted
-        // with the current theme foreground, never with a bitmap or fixed purple color.
-        val d = density
+        // Reference-shaped microphone inside a compact circular button. The circle is a
+        // touch/visual container; the microphone itself remains a scalable vector.
+        val scale = (height / (44f * density)).coerceIn(0.72f, 1f)
+        val d = density * scale
         val centerY = height / 2f
+        val circleRadius = (height / 2f - 1.5f * d).coerceAtLeast(10f * d)
+
+        micButtonPaint.color = theme.keyColor
+        micButtonPaint.style = Paint.Style.FILL
+        canvas.drawCircle(centerX, centerY, circleRadius, micButtonPaint)
+
+        iconStrokePaint.color = theme.borderColor
+        iconStrokePaint.style = Paint.Style.STROKE
+        iconStrokePaint.strokeWidth = 1f * d
+        canvas.drawCircle(centerX, centerY, circleRadius, iconStrokePaint)
+
         val bodyWidth = 7.2f * d
         val bodyTop = centerY - 16f * d
         val bodyBottom = centerY + 5f * d
-        val bodyRadius = bodyWidth
         val arcLeft = centerX - 13.5f * d
         val arcTop = centerY - 7f * d
         val arcRight = centerX + 13.5f * d
@@ -356,8 +368,8 @@ class KeyboardToolbarView(
                 bodyTop,
                 centerX + bodyWidth,
                 bodyBottom,
-                bodyRadius,
-                bodyRadius,
+                bodyWidth,
+                bodyWidth,
                 iconStrokePaint,
             )
             canvas.drawArc(
@@ -380,13 +392,12 @@ class KeyboardToolbarView(
             )
         }
 
+        // Black on light themes and white/light on dark themes through the existing
+        // theme foreground system; no fixed purple and no bitmap.
         iconStrokePaint.color = theme.textColor
-        iconStrokePaint.style = Paint.Style.STROKE
         iconStrokePaint.strokeCap = Paint.Cap.ROUND
         iconStrokePaint.strokeJoin = Paint.Join.ROUND
 
-        // A restrained theme-colored halo keeps the reference's neon character without
-        // forcing purple on light/dark themes.
         iconStrokePaint.alpha = 42
         iconStrokePaint.strokeWidth = 5.2f * d
         drawReferenceGeometry()
@@ -394,7 +405,7 @@ class KeyboardToolbarView(
         iconStrokePaint.alpha = 255
         iconStrokePaint.strokeWidth = 1.9f * d
         drawReferenceGeometry()
-        iconStrokePaint.strokeWidth = 2.2f * d
+        iconStrokePaint.strokeWidth = 2.2f * density
     }
 
     private fun drawText(canvas: Canvas, value: String, left: Float, right: Float) {
