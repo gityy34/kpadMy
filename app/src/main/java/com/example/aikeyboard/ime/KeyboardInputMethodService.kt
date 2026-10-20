@@ -114,6 +114,9 @@ class KeyboardInputMethodService : InputMethodService() {
         override fun onReceive(context: Context?, intent: Intent?) {
             glideTypingEnabled = keyboardSettings.glideTypingEnabled()
             keyboardView?.invalidate()
+            // Suggestions render inside the toolbar; invalidate it as well so font-size
+            // changes are visible immediately without restarting the IME.
+            toolbarView?.invalidate()
             emojiPanel?.setEmojiScale(
                 KeyboardSettings.emojiScaleForLevel(keyboardSettings.emojiSizeLevel()),
             )
