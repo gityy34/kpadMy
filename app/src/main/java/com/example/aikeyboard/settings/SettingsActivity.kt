@@ -581,7 +581,7 @@ class SettingsActivity : Activity() {
             title = "Corrections & Suggestions",
             description = "Corrections, current-word suggestions, and next-word prediction",
             entries = listOf(
-                toggle("suggestions.personal", "Personalized suggestions", "Use private learned ranking when enabled.", "Suggestions > Personalization", ToggleKey.PERSONALIZED_SUGGESTIONS, "learning personal"),
+                info("suggestions.personal", "Personalized suggestions", "This setting is controlled in Dictionary & Personal Learning so there is one source of truth.", "Corrections & Suggestions > Personalization", "learning personal"),
                 info("suggestions.next", "Next-word prediction", "After Space, the next-word context is requested asynchronously.", "Suggestions > Next word", "next word context"),
                 info("suggestions.languages", "English, Urdu, and Roman Urdu prediction", "Language-aware local candidates remain available for mixed text.", "Suggestions > Languages", "english urdu roman"),
                 info("suggestions.typed", "Keep the typed word", "Your original typed form remains available; suggestions do not silently replace it.", "Suggestions > User control", "typed word correction"),
@@ -699,7 +699,7 @@ class SettingsActivity : Activity() {
             description = "Local processing, sensitive fields, and personal data controls",
             entries = listOf(
                 info("privacy.sensitive", "Sensitive-field protection", "Password, PIN, OTP, authentication, and no-personalized-learning fields are protected.", "Privacy & Security > Sensitive fields", "password pin otp authentication"),
-                toggle("privacy.learning", "Personalized suggestions", "Turn private vocabulary learning and personal ranking on or off.", "Privacy & Security > Learning", ToggleKey.PERSONALIZED_SUGGESTIONS, "learning"),
+                info("privacy.learning", "Personalized learning", "Use Dictionary & Personal Learning for the single persistent learning control; sensitive fields remain protected.", "Privacy & Security > Learning", "learning personal data"),
                 info("privacy.voice", "Voice processing", "Audio is processed only for the active voice session and is not stored by default.", "Privacy & Security > Voice", "recording audio"),
                 info("privacy.network", "Network behavior", "Normal typing and local prediction do not require network access.", "Privacy & Security > Network", "offline network cloud"),
             ),
