@@ -313,6 +313,7 @@ class KeyboardInputMethodService : InputMethodService() {
         val baseKey = inputSessionBaseKey(info)
         if (restarting && inputSessionKey != null && inputSessionBaseKey == baseKey) return
 
+        // A fresh token prevents same-metadata fields from sharing undo history.
         val sessionKey = baseKey + "|session-" + (++inputSessionGeneration)
         editHistory.beginSession(sessionKey)
         inputSessionKey = sessionKey
