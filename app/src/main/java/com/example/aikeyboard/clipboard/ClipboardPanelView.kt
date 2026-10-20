@@ -59,7 +59,7 @@ class ClipboardPanelView(
         scroll.setPadding(dp(4), dp(3), dp(4), dp(3))
         scroll.addView(
             grid,
-            ScrollView.LayoutParams(
+            ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ),
