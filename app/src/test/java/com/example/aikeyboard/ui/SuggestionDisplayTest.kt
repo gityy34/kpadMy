@@ -24,6 +24,7 @@ class SuggestionDisplayTest {
         val words = listOf("Pomegranate", "Watermelon", "Strawberry")
         val displayed = words.map(SuggestionDisplay::displayText)
         assertEquals(listOf("Pom..ate", "Wat..lon", "Str..rry"), displayed)
-        assertEquals(words, words)
+        assertEquals("Pomegranate", words[0])
+        assertEquals("123..789", SuggestionDisplay.displayText("123456789"))
     }
 }
