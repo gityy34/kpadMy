@@ -19,6 +19,7 @@ import android.widget.EditText
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.SeekBar
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
@@ -172,7 +173,11 @@ class SettingsActivity : Activity() {
 
     private fun renderCurrentPage() {
         val categoryId = currentCategoryId
-        if (categoryId == null) renderHome() else renderCategory(categoryId)
+        when (categoryId) {
+            null -> renderHome()
+            APPEARANCE_CONTROLS_ID -> renderAppearanceControls()
+            else -> renderCategory(categoryId)
+        }
     }
 
     private fun renderHome() {
@@ -344,6 +349,7 @@ class SettingsActivity : Activity() {
     private fun performAction(action: SettingAction?) {
         when (action) {
             SettingAction.OPEN_THEMES -> startActivity(Intent(this, ThemeActivity::class.java))
+            SettingAction.OPEN_APPEARANCE_CONTROLS -> renderAppearanceControls()
             SettingAction.RESET_TOOLBAR -> {
                 settings.setToolbarOrder(KeyboardSettings.DEFAULT_TOOLBAR_ORDER)
                 Toast.makeText(this, "Toolbar layout reset", Toast.LENGTH_SHORT).show()
@@ -358,13 +364,110 @@ class SettingsActivity : Activity() {
     private fun readToggle(toggle: ToggleKey): Boolean = when (toggle) {
         ToggleKey.PERSONALIZED_SUGGESTIONS -> settings.personalizedSuggestionsEnabled()
         ToggleKey.GLIDE_TYPING -> settings.glideTypingEnabled()
+        ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.showLanguageSwitchKey()
     }
 
     private fun writeToggle(toggle: ToggleKey, value: Boolean) {
         when (toggle) {
             ToggleKey.PERSONALIZED_SUGGESTIONS -> settings.setPersonalizedSuggestionsEnabled(value)
             ToggleKey.GLIDE_TYPING -> settings.setGlideTypingEnabled(value)
+            ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.setShowLanguageSwitchKey(value)
         }
+        notifySettingsChanged()
+    }
+
+    private fun renderAppearanceControls() {
+        currentCategoryId = APPEARANCE_CONTROLS_ID
+        renderedRows.clear()
+        applyThemeToScreen()
+        body.removeAllViews()
+        addSectionHeader(
+            "Font & Emoji Size",
+            "Choose a bounded level and see the approximate result immediately.",
+        )
+        addSizeControl(
+            title = "Font size",
+            description = "Keyboard labels and suggestion text",
+            initialLevel = settings.fontSizeLevel(),
+            preview = { level -> "Tt  Aa  123  " + (level + 1) + "/" + SIZE_LEVEL_COUNT },
+            scale = { level -> KeyboardSettings.fontScaleForLevel(level) },
+            onLevelChanged = { level ->
+                settings.setFontSizeLevel(level)
+                notifySettingsChanged()
+            },
+        )
+        addSizeControl(
+            title = "Emoji size",
+            description = "Emoji shown in the in-keyboard Emoji panel",
+            initialLevel = settings.emojiSizeLevel(),
+            preview = { level -> "😀  😊  ❤️  🔥   " + (level + 1) + "/" + SIZE_LEVEL_COUNT },
+            scale = { level -> KeyboardSettings.emojiScaleForLevel(level) },
+            onLevelChanged = { level ->
+                settings.setEmojiSizeLevel(level)
+                notifySettingsChanged()
+            },
+        )
+        bodyScroll.scrollTo(0, 0)
+    }
+
+    private fun addSizeControl(
+        title: String,
+        description: String,
+        initialLevel: Int,
+        preview: (Int) -> String,
+        scale: (Int) -> Float,
+        onLevelChanged: (Int) -> Unit,
+    ) {
+        val card = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            background = roundedSurface()
+        }
+        card.addView(label(title, 17f, activeTheme.textColor))
+        card.addView(label(description, 12f, mutedColor()).apply {
+            setPadding(0, dp(2), 0, dp(8))
+        })
+        val previewLabel = label(preview(initialLevel), 22f, activeTheme.textColor).apply {
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(4), dp(6), dp(4), dp(8))
+        }
+        previewLabel.textSize = if (title == "Emoji size") {
+            25f * scale(initialLevel)
+        } else {
+            22f * scale(initialLevel)
+        }
+        card.addView(previewLabel, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(48),
+        ))
+        val seek = SeekBar(this).apply {
+            max = SIZE_LEVEL_COUNT - 1
+            progress = initialLevel.coerceIn(0, max)
+            contentDescription = title
+        }
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+                previewLabel.text = preview(value)
+                previewLabel.textSize = if (title == "Emoji size") {
+                    25f * scale(value)
+                } else {
+                    22f * scale(value)
+                }
+                if (fromUser) onLevelChanged(value)
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+        })
+        card.addView(seek, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(42),
+        ))
+        body.addView(card, rowParams())
+    }
+
+    private fun notifySettingsChanged() {
+        sendBroadcast(Intent(KeyboardSettings.ACTION_SETTINGS_CHANGED).setPackage(packageName))
     }
 
     private fun confirmClear() {
@@ -439,6 +542,7 @@ class SettingsActivity : Activity() {
                 info("languages.urdu", "Urdu", "Real Urdu Unicode input with RTL support.", "Language > Urdu", "urdu rtl unicode"),
                 info("languages.roman", "Roman Urdu", "Latin layout with Roman Urdu prediction and variants.", "Language > Roman Urdu", "roman urdu prediction"),
                 info("languages.switch", "Language switching", "Switch instantly from Tools > Language without closing the IME.", "Language > Switching", "switch active language"),
+                toggle("languages.switch.key", "Show Language Switch Key", "Show a compact globe key beside 123 and Space in the bottom row.", "Languages > Bottom row", ToggleKey.SHOW_LANGUAGE_SWITCH, "globe language key bottom row space"),
             ),
         ),
         SettingsCategory(
@@ -536,6 +640,7 @@ class SettingsActivity : Activity() {
             description = "Keyboard colors, borders, gradients, and custom themes",
             entries = listOf(
                 action("themes.editor", "Themes and appearance", "Open the theme editor with Apply and Cancel support.", "Themes & Appearance > Theme editor", SettingAction.OPEN_THEMES, "theme colour gradient image"),
+                action("themes.sizes", "Font & Emoji size", "Set seven readable font and emoji levels with an instant preview.", "Themes & Appearance > Size controls", SettingAction.OPEN_APPEARANCE_CONTROLS, "font size emoji size text labels appearance"),
                 info("themes.current", "Current theme", "The active theme is ${activeTheme.name}.", "Themes & Appearance > Current theme", "solid white black neon"),
                 info("themes.keys", "Bordered or borderless keys", "Visual key style changes do not alter touch or glide geometry.", "Themes & Appearance > Key style", "border borderless"),
             ),
@@ -616,6 +721,8 @@ class SettingsActivity : Activity() {
 
     companion object {
         const val EXTRA_FOCUS_SEARCH = "focus_settings_search"
+        const val APPEARANCE_CONTROLS_ID = "appearance_controls"
+        const val SIZE_LEVEL_COUNT = 7
     }
 
     private data class SettingsCategory(
@@ -640,6 +747,6 @@ class SettingsActivity : Activity() {
     )
 
     private enum class EntryType { INFO, ACTION, TOGGLE, PLACEHOLDER }
-    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING }
-    private enum class SettingAction { OPEN_THEMES, RESET_TOOLBAR, CLEAR_PERSONAL_DATA, OPEN_KEYBOARD_SETUP }
+    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH }
+    private enum class SettingAction { OPEN_THEMES, OPEN_APPEARANCE_CONTROLS, RESET_TOOLBAR, CLEAR_PERSONAL_DATA, OPEN_KEYBOARD_SETUP }
 }
