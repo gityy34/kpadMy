@@ -6,6 +6,7 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
+import android.os.Build
 import android.os.Bundle
 import android.provider.Settings as AndroidSettings
 import android.text.Editable
@@ -76,7 +77,8 @@ class SettingsActivity : Activity() {
         if (::body.isInitialized) {
             activeTheme = themeStore.activeTheme()
             categories = buildCategories()
-            renderCurrentPage()
+            val query = search.text?.toString().orEmpty().trim()
+            if (query.isBlank()) renderCurrentPage() else renderSearchResults(query)
         }
     }
 
@@ -122,6 +124,7 @@ class SettingsActivity : Activity() {
 
         search = EditText(this).apply {
             hint = getString(R.string.search_settings)
+            contentDescription = getString(R.string.search_settings)
             textSize = 16f
             setSingleLine(true)
             imeOptions = EditorInfo.IME_ACTION_SEARCH
@@ -221,7 +224,10 @@ class SettingsActivity : Activity() {
         val normalized = query.lowercase(Locale.ROOT)
         val matches = categories.flatMap { category ->
             category.entries.map { entry ->
-                category.id to entry.copy(path = "${category.title}  ›  ${entry.path}")
+                category.id to entry.copy(
+                    path = "${category.title}  ›  ${entry.path}",
+                    keywords = "${category.title} ${category.description} ${entry.keywords}",
+                )
             }
         }.filter { entry ->
             listOf(entry.second.title, entry.second.description, entry.second.path, entry.second.keywords)
@@ -548,22 +554,23 @@ class SettingsActivity : Activity() {
         SettingsCategory(
             id = "typing",
             icon = "⌨",
-            title = "Typing & Layout",
-            description = "Fast input, key behavior, punctuation, and editing",
+            title = "Preferences",
+            description = "General keyboard behavior, layout preferences, and appearance controls",
             entries = listOf(
-                info("typing.fast", "Fast key input", "Normal key commits stay independent from background work.", "Typing & Layout > Key press behavior", "key press behavior latency"),
-                info("typing.shift", "Shift and Caps Lock", "One-shot Shift and Caps Lock are supported.", "Typing & Layout > Shift", "shift caps lock"),
-                info("typing.symbols", "Numbers and symbols", "The keyboard includes punctuation and symbol layouts.", "Typing & Layout > Symbols", "numbers symbols punctuation"),
-                info("typing.space", "Auto space", "Normal Space commits immediately; suggestion acceptance uses one safe space.", "Typing & Layout > Space", "auto space"),
-                info("typing.repeat", "Backspace repeat", "Hold Backspace for controlled repeated deletion.", "Typing & Layout > Backspace", "key repeat backspace"),
-                unavailable("typing.haptics", "Haptic feedback", "Device haptics are not configurable in this build.", "Typing & Layout > Feedback", "vibration sound key press"),
+                action("typing.appearance", "Font & Emoji Size", "Open the seven-level live controls for keyboard text and emoji.", "Preferences > Appearance", SettingAction.OPEN_APPEARANCE_CONTROLS, "font size emoji size appearance preview"),
+                info("typing.fast", "Fast key input", "Normal key commits stay independent from background work.", "Preferences > Key press behavior", "key press behavior latency"),
+                info("typing.shift", "Shift and Caps Lock", "One-shot Shift and Caps Lock are supported.", "Preferences > Shift", "shift caps lock"),
+                info("typing.symbols", "Numbers and symbols", "The keyboard includes punctuation and symbol layouts.", "Preferences > Symbols", "numbers symbols punctuation"),
+                info("typing.space", "Auto space", "Normal Space commits immediately; suggestion acceptance uses one safe space.", "Preferences > Space", "auto space"),
+                info("typing.repeat", "Backspace repeat", "Hold Backspace for controlled repeated deletion.", "Preferences > Backspace", "key repeat backspace"),
+                unavailable("typing.haptics", "Haptic feedback", "Device haptics are not configurable in this build.", "Preferences > Feedback", "vibration sound key press"),
             ),
         ),
         SettingsCategory(
             id = "suggestions",
             icon = "✦",
-            title = "Suggestions & Prediction",
-            description = "Local English, Urdu, and Roman Urdu suggestions",
+            title = "Corrections & Suggestions",
+            description = "Corrections, current-word suggestions, and next-word prediction",
             entries = listOf(
                 toggle("suggestions.personal", "Personalized suggestions", "Use private learned ranking when enabled.", "Suggestions > Personalization", ToggleKey.PERSONALIZED_SUGGESTIONS, "learning personal"),
                 info("suggestions.next", "Next-word prediction", "After Space, the next-word context is requested asynchronously.", "Suggestions > Next word", "next word context"),
@@ -576,12 +583,12 @@ class SettingsActivity : Activity() {
         SettingsCategory(
             id = "learning",
             icon = "◇",
-            title = "Personal Learning",
-            description = "Private vocabulary and ranking controls",
+            title = "Dictionary & Personal Learning",
+            description = "Private vocabulary, learned words, and sensitive-field protection",
             entries = listOf(
-                toggle("learning.personal", "Personalized suggestions", "Learn only meaningful commits in non-sensitive fields.", "Personal Learning > Control", ToggleKey.PERSONALIZED_SUGGESTIONS, "learn words"),
-                action("learning.clear", "Clear learned words", "Remove private vocabulary and ranking data from this device.", "Personal Learning > Privacy", SettingAction.CLEAR_PERSONAL_DATA, "clear personal typing data"),
-                info("learning.roman", "Personal Roman Urdu preferences", "Repeated spelling variants can rank naturally without forcing one spelling.", "Personal Learning > Roman Urdu", "mjhy mujhe nhi nahi"),
+                toggle("learning.personal", "Personalized suggestions", "Learn only meaningful commits in non-sensitive fields.", "Dictionary & Personal Learning > Control", ToggleKey.PERSONALIZED_SUGGESTIONS, "learn words"),
+                action("learning.clear", "Clear learned words", "Remove private vocabulary and ranking data from this device.", "Dictionary & Personal Learning > Privacy", SettingAction.CLEAR_PERSONAL_DATA, "clear personal typing data"),
+                info("learning.roman", "Personal Roman Urdu preferences", "Repeated spelling variants can rank naturally without forcing one spelling.", "Dictionary & Personal Learning > Roman Urdu", "mjhy mujhe nhi nahi"),
                 info("learning.protection", "Sensitive-field protection", "Password, PIN, authentication, and no-learning fields are excluded.", "Personal Learning > Privacy", "privacy password pin otp"),
             ),
         ),
@@ -640,7 +647,6 @@ class SettingsActivity : Activity() {
             description = "Keyboard colors, borders, gradients, and custom themes",
             entries = listOf(
                 action("themes.editor", "Themes and appearance", "Open the theme editor with Apply and Cancel support.", "Themes & Appearance > Theme editor", SettingAction.OPEN_THEMES, "theme colour gradient image"),
-                action("themes.sizes", "Font & Emoji size", "Set seven readable font and emoji levels with an instant preview.", "Themes & Appearance > Size controls", SettingAction.OPEN_APPEARANCE_CONTROLS, "font size emoji size text labels appearance"),
                 info("themes.current", "Current theme", "The active theme is ${activeTheme.name}.", "Themes & Appearance > Current theme", "solid white black neon"),
                 info("themes.keys", "Bordered or borderless keys", "Visual key style changes do not alter touch or glide geometry.", "Themes & Appearance > Key style", "border borderless"),
             ),
@@ -648,23 +654,23 @@ class SettingsActivity : Activity() {
         SettingsCategory(
             id = "resize",
             icon = "↕",
-            title = "Resize & Keyboard Size",
-            description = "Safe keyboard dimensions and protected bottom space",
+            title = "Resize & Layout",
+            description = "Safe keyboard dimensions, position, and protected bottom space",
             entries = listOf(
-                info("resize.open", "Resize keyboard", "Use Tools > Resize to adjust the keyboard manually; panels never resize it automatically.", "Resize & Keyboard Size > Resize", "resize keyboard size"),
-                info("resize.current", "Current size", "Saved keyboard height: ${settings.keyboardHeightDp()}dp.", "Resize & Keyboard Size > Current size", "height minimum maximum"),
-                info("resize.safe", "Bottom safe space", "The reference bottom region and system navigation inset are accounted for once.", "Resize & Keyboard Size > Safe area", "safe space navigation"),
+                info("resize.open", "Resize keyboard", "Use Tools > Resize to adjust the keyboard manually; panels never resize it automatically.", "Resize & Layout > Resize", "resize keyboard size"),
+                info("resize.current", "Current size", "Saved keyboard height: ${settings.keyboardHeightDp()}dp.", "Resize & Layout > Current size", "height minimum maximum"),
+                info("resize.safe", "Bottom safe space", "The reference bottom region and system navigation inset are accounted for once.", "Resize & Layout > Safe area", "safe space navigation"),
             ),
         ),
         SettingsCategory(
             id = "emoji",
             icon = "☺",
-            title = "Emoji",
+            title = "Emojis",
             description = "Emoji panel, search, recent use, and Unicode-safe insertion",
             entries = listOf(
-                info("emoji.panel", "Emoji panel", "Open Emoji from Tools without closing the keyboard.", "Emoji > Panel", "emoji"),
-                info("emoji.recent", "Recent and frequent emoji", "Recent and frequency data are kept locally with bounded storage.", "Emoji > Usage", "recent frequent"),
-                info("emoji.unicode", "Unicode-safe emoji editing", "ZWJ sequences, flags, and skin-tone sequences are preserved on insertion/deletion.", "Emoji > Unicode", "skin tone flags ZWJ"),
+                info("emoji.panel", "Emoji panel", "Open Emoji from Tools without closing the keyboard.", "Emojis > Panel", "emoji"),
+                info("emoji.recent", "Recent and frequent emoji", "Recent and frequency data are kept locally with bounded storage.", "Emojis > Usage", "recent frequent"),
+                info("emoji.unicode", "Unicode-safe emoji editing", "ZWJ sequences, flags, and skin-tone sequences are preserved on insertion/deletion.", "Emojis > Unicode", "skin tone flags ZWJ"),
             ),
         ),
         SettingsCategory(
@@ -680,12 +686,35 @@ class SettingsActivity : Activity() {
             ),
         ),
         SettingsCategory(
+            id = "clipboard",
+            icon = "▣",
+            title = "Clipboard",
+            description = "Clipboard options are shown only when backed by this build",
+            entries = listOf(
+                unavailable("clipboard.history", "Clipboard history", "No persistent clipboard history is implemented in this build.", "Clipboard > History", "clipboard history recent clips pinned retention"),
+                unavailable("clipboard.clear", "Clear clipboard", "There is no keyboard-owned clipboard store to clear in this build.", "Clipboard > Privacy", "clear clipboard sensitive protection"),
+            ),
+        ),
+        SettingsCategory(
+            id = "accessibility",
+            icon = "◉",
+            title = "Accessibility",
+            description = "System accessibility support and readable keyboard behavior",
+            entries = listOf(
+                info("accessibility.talkback", "TalkBack support", "Keyboard controls expose descriptive actions where supported; TalkBack is managed by Android.", "Accessibility > TalkBack", "talkback screen reader content description"),
+                unavailable("accessibility.motion", "Reduced motion", "A dedicated reduced-motion preference is not implemented in this build.", "Accessibility > Motion", "reduced motion animation"),
+                unavailable("accessibility.labels", "Larger labels", "Use Font & Emoji Size for supported keyboard text; a separate label override is not implemented.", "Accessibility > Text", "larger labels text size"),
+                unavailable("accessibility.contrast", "High contrast", "No separate high-contrast override is implemented; theme foreground/background contrast is used.", "Accessibility > Contrast", "high contrast"),
+            ),
+        ),
+        SettingsCategory(
             id = "about",
             icon = "ⓘ",
             title = "About",
             description = "Build information and keyboard architecture",
             entries = listOf(
                 info("about.version", "AI Keyboard", "Version ${appVersion()}.", "About > Version", "version build"),
+                info("about.build", "Build number", "Installed build ${appBuild()}.", "About > Build", "build number version code"),
                 info("about.engine", "Keyboard engine", "InputMethodService with modular typing, composition, prediction, and UI boundaries.", "About > Engine", "ime input engine"),
             ),
         ),
@@ -717,6 +746,16 @@ class SettingsActivity : Activity() {
     private fun appVersion(): String = runCatching {
         @Suppress("DEPRECATION")
         packageManager.getPackageInfo(packageName, 0).versionName ?: "development"
+    }.getOrDefault("development")
+
+    private fun appBuild(): String = runCatching {
+        val packageInfo = packageManager.getPackageInfo(packageName, 0)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            packageInfo.longVersionCode.toString()
+        } else {
+            @Suppress("DEPRECATION")
+            packageInfo.versionCode.toString()
+        }
     }.getOrDefault("development")
 
     companion object {
