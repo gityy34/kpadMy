@@ -40,6 +40,7 @@ class ToolsPanelView(
         "redo" to ("↷" to "Redo"),
         "themes" to ("◈" to "Themes"),
         "emoji" to ("☺" to "Emoji"),
+        "clipboard" to ("▣" to "Clipboard"),
         "ai" to ("✦" to "AI tools"),
     )
     private var theme = KeyboardTheme.SOLID_WHITE
@@ -54,6 +55,7 @@ class ToolsPanelView(
         background.color = value.backgroundColor
         text.color = value.textColor
         icon.color = value.accentColor
+        contentDescription = "Tools panel. Clipboard opens local recent and pinned text."
         invalidate()
     }
 
