@@ -36,6 +36,7 @@ class SuggestionStripView(
         color = TEXT_COLOR
         textSize = TEXT_SIZE_SP * scaledDensity
         typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        textAlign = Paint.Align.CENTER
     }
 
     private var candidates: List<SuggestionCandidate> = emptyList()
@@ -172,39 +173,24 @@ class SuggestionStripView(
     fun cancelPendingInput() = cancelGesture()
 
     private fun drawCandidate(canvas: Canvas, text: String, left: Float, right: Float) {
-        val horizontalPadding = (12 * density).roundToInt()
-        val availableWidth = (right - left).toInt() - horizontalPadding * 2
-        if (availableWidth <= 0 || text.isEmpty()) return
-        val direction = if (containsRtl(text)) {
-            TextDirectionHeuristics.FIRSTSTRONG_RTL
-        } else {
-            TextDirectionHeuristics.FIRSTSTRONG_LTR
-        }
+        val horizontalPadding = 8f * density
+        val availableWidth = (right - left - horizontalPadding * 2f).coerceAtLeast(1f)
+        if (availableWidth <= 0f || text.isEmpty()) return
         val fitted = SuggestionDisplay.fit(
             fullText = text,
-            availableWidthPx = availableWidth.toFloat(),
+            availableWidthPx = availableWidth,
             baseTextSizePx = TEXT_SIZE_SP * scaledDensity,
             scaledDensity = scaledDensity,
             textPaint = textPaint,
         )
         textPaint.textSize = fitted.textSizePx
         textPaint.textScaleX = fitted.textScaleX
-        val layout = StaticLayout.Builder.obtain(
-            fitted.text,
-            0,
-            fitted.text.length,
-            textPaint,
-            availableWidth,
-        ).setAlignment(Layout.Alignment.ALIGN_CENTER)
-            .setIncludePad(false)
-            .setMaxLines(1)
-            .setTextDirection(direction)
-            .build()
-        val top = ((height - layout.height) / 2f).coerceAtLeast(0f)
+        textPaint.textAlign = Paint.Align.CENTER
         canvas.save()
         canvas.clipRect(left, 0f, right, height.toFloat())
-        canvas.translate(left + horizontalPadding, top)
-        layout.draw(canvas)
+        val centerX = (left + right) / 2f
+        val baseline = height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f
+        canvas.drawText(fitted.text, centerX, baseline, textPaint)
         canvas.restore()
         textPaint.textScaleX = 1f
     }
