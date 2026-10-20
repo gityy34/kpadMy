@@ -55,6 +55,7 @@ class KeyboardToolbarView(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    private val micButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var theme = KeyboardTheme.SOLID_WHITE
     private val fixedSuggestionSlotCount = 3
     private val handler = Handler(Looper.getMainLooper())
@@ -93,6 +94,7 @@ class KeyboardToolbarView(
         dividerPaint.color = value.borderColor
         textPaint.color = value.textColor
         iconPaint.color = value.textColor
+        micButtonPaint.color = value.keyColor
         invalidate()
     }
 
@@ -333,34 +335,76 @@ class KeyboardToolbarView(
             canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
                 centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
         }
-        // Recreated from the supplied reference as a compact outline vector. The artwork stays
-        // inside the fixed microphone cell; the cell itself remains the full touch target.
-        iconStrokePaint.color = theme.textColor
+
+        // Reference-shaped microphone inside a compact circular button. The circle is a
+        // touch/visual container; the microphone itself remains a scalable vector.
+        val scale = (height / (44f * density)).coerceIn(0.72f, 1f)
+        val d = density * scale
+        val centerY = height / 2f
+        val circleRadius = (height / 2f - 1.5f * d).coerceAtLeast(10f * d)
+
+        micButtonPaint.color = theme.keyColor
+        micButtonPaint.style = Paint.Style.FILL
+        canvas.drawCircle(centerX, centerY, circleRadius, micButtonPaint)
+
+        iconStrokePaint.color = theme.borderColor
         iconStrokePaint.style = Paint.Style.STROKE
-        iconStrokePaint.strokeWidth = 1.9f * density
+        iconStrokePaint.strokeWidth = 1f * d
+        canvas.drawCircle(centerX, centerY, circleRadius, iconStrokePaint)
+
+        val bodyWidth = 7.2f * d
+        val bodyTop = centerY - 16f * d
+        val bodyBottom = centerY + 5f * d
+        val arcLeft = centerX - 13.5f * d
+        val arcTop = centerY - 7f * d
+        val arcRight = centerX + 13.5f * d
+        val arcBottom = centerY + 11f * d
+        val stemBottom = centerY + 16f * d
+        val baseHalfWidth = 8f * d
+
+        fun drawReferenceGeometry() {
+            canvas.drawRoundRect(
+                centerX - bodyWidth,
+                bodyTop,
+                centerX + bodyWidth,
+                bodyBottom,
+                bodyWidth,
+                bodyWidth,
+                iconStrokePaint,
+            )
+            canvas.drawArc(
+                arcLeft,
+                arcTop,
+                arcRight,
+                arcBottom,
+                0f,
+                180f,
+                false,
+                iconStrokePaint,
+            )
+            canvas.drawLine(centerX, arcBottom, centerX, stemBottom, iconStrokePaint)
+            canvas.drawLine(
+                centerX - baseHalfWidth,
+                stemBottom,
+                centerX + baseHalfWidth,
+                stemBottom,
+                iconStrokePaint,
+            )
+        }
+
+        // Black on light themes and white/light on dark themes through the existing
+        // theme foreground system; no fixed purple and no bitmap.
+        iconStrokePaint.color = theme.textColor
         iconStrokePaint.strokeCap = Paint.Cap.ROUND
         iconStrokePaint.strokeJoin = Paint.Join.ROUND
-        val centerY = height / 2f
-        val capsuleWidth = 5.3f * density
-        val capsuleTop = centerY - 11f * density
-        val capsuleBottom = centerY + 3f * density
-        canvas.drawRoundRect(
-            centerX - capsuleWidth,
-            capsuleTop,
-            centerX + capsuleWidth,
-            capsuleBottom,
-            capsuleWidth,
-            capsuleWidth,
-            iconStrokePaint,
-        )
-        val arcLeft = centerX - 10.5f * density
-        val arcTop = centerY - 5f * density
-        val arcRight = centerX + 10.5f * density
-        val arcBottom = centerY + 9f * density
-        canvas.drawArc(arcLeft, arcTop, arcRight, arcBottom, 0f, 180f, false, iconStrokePaint)
-        canvas.drawLine(centerX, arcBottom, centerX, centerY + 15f * density, iconStrokePaint)
-        canvas.drawLine(centerX - 6.5f * density, centerY + 15f * density,
-            centerX + 6.5f * density, centerY + 15f * density, iconStrokePaint)
+
+        iconStrokePaint.alpha = 42
+        iconStrokePaint.strokeWidth = 5.2f * d
+        drawReferenceGeometry()
+
+        iconStrokePaint.alpha = 255
+        iconStrokePaint.strokeWidth = 1.9f * d
+        drawReferenceGeometry()
         iconStrokePaint.strokeWidth = 2.2f * density
     }
 
