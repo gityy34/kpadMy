@@ -581,18 +581,6 @@ class SettingsActivity : Activity() {
             ),
         ),
         SettingsCategory(
-            id = "learning",
-            icon = "◇",
-            title = "Dictionary & Personal Learning",
-            description = "Private vocabulary, learned words, and sensitive-field protection",
-            entries = listOf(
-                toggle("learning.personal", "Personalized suggestions", "Learn only meaningful commits in non-sensitive fields.", "Dictionary & Personal Learning > Control", ToggleKey.PERSONALIZED_SUGGESTIONS, "learn words"),
-                action("learning.clear", "Clear learned words", "Remove private vocabulary and ranking data from this device.", "Dictionary & Personal Learning > Privacy", SettingAction.CLEAR_PERSONAL_DATA, "clear personal typing data"),
-                info("learning.roman", "Personal Roman Urdu preferences", "Repeated spelling variants can rank naturally without forcing one spelling.", "Dictionary & Personal Learning > Roman Urdu", "mjhy mujhe nhi nahi"),
-                info("learning.protection", "Sensitive-field protection", "Password, PIN, authentication, and no-learning fields are excluded.", "Personal Learning > Privacy", "privacy password pin otp"),
-            ),
-        ),
-        SettingsCategory(
             id = "glide",
             icon = "⌁",
             title = "Glide Typing",
@@ -617,14 +605,47 @@ class SettingsActivity : Activity() {
             ),
         ),
         SettingsCategory(
-            id = "ai",
-            icon = "✧",
-            title = "AI Tools",
-            description = "Reserved extension points for future writing tools",
+            id = "clipboard",
+            icon = "▣",
+            title = "Clipboard",
+            description = "Clipboard options are shown only when backed by this build",
             entries = listOf(
-                unavailable("ai.tools", "AI writing tools", "Grammar, rewrite, tone, and assistant tools are not connected in this build.", "AI Tools > Writing", "ai grammar rewrite humanise tone"),
-                unavailable("ai.provider", "AI provider and model", "Provider and model selection will appear when an approved provider is connected.", "AI Tools > Provider", "provider model ChatGPT connection"),
-                unavailable("ai.privacy", "AI data behavior", "No AI network request is made by the current keyboard build.", "AI Tools > Privacy", "network api privacy"),
+                unavailable("clipboard.history", "Clipboard history", "No persistent clipboard history is implemented in this build.", "Clipboard > History", "clipboard history recent clips pinned retention"),
+                unavailable("clipboard.clear", "Clear clipboard", "There is no keyboard-owned clipboard store to clear in this build.", "Clipboard > Privacy", "clear clipboard sensitive protection"),
+            ),
+        ),
+        SettingsCategory(
+            id = "learning",
+            icon = "◇",
+            title = "Dictionary & Personal Learning",
+            description = "Private vocabulary, learned words, and sensitive-field protection",
+            entries = listOf(
+                toggle("learning.personal", "Personalized suggestions", "Learn only meaningful commits in non-sensitive fields.", "Dictionary & Personal Learning > Control", ToggleKey.PERSONALIZED_SUGGESTIONS, "learn words"),
+                action("learning.clear", "Clear learned words", "Remove private vocabulary and ranking data from this device.", "Dictionary & Personal Learning > Privacy", SettingAction.CLEAR_PERSONAL_DATA, "clear personal typing data"),
+                info("learning.roman", "Personal Roman Urdu preferences", "Repeated spelling variants can rank naturally without forcing one spelling.", "Dictionary & Personal Learning > Roman Urdu", "mjhy mujhe nhi nahi"),
+                info("learning.protection", "Sensitive-field protection", "Password, PIN, authentication, and no-learning fields are excluded.", "Personal Learning > Privacy", "privacy password pin otp"),
+            ),
+        ),
+        SettingsCategory(
+            id = "emoji",
+            icon = "☺",
+            title = "Emojis",
+            description = "Emoji panel, search, recent use, and Unicode-safe insertion",
+            entries = listOf(
+                info("emoji.panel", "Emoji panel", "Open Emoji from Tools without closing the keyboard.", "Emojis > Panel", "emoji"),
+                info("emoji.recent", "Recent and frequent emoji", "Recent and frequency data are kept locally with bounded storage.", "Emojis > Usage", "recent frequent"),
+                info("emoji.unicode", "Unicode-safe emoji editing", "ZWJ sequences, flags, and skin-tone sequences are preserved on insertion/deletion.", "Emojis > Unicode", "skin tone flags ZWJ"),
+            ),
+        ),
+        SettingsCategory(
+            id = "themes",
+            icon = "◈",
+            title = "Themes & Appearance",
+            description = "Keyboard colors, borders, gradients, and custom themes",
+            entries = listOf(
+                action("themes.editor", "Themes and appearance", "Open the theme editor with Apply and Cancel support.", "Themes & Appearance > Theme editor", SettingAction.OPEN_THEMES, "theme colour gradient image"),
+                info("themes.current", "Current theme", "The active theme is ${activeTheme.name}.", "Themes & Appearance > Current theme", "solid white black neon"),
+                info("themes.keys", "Bordered or borderless keys", "Visual key style changes do not alter touch or glide geometry.", "Themes & Appearance > Key style", "border borderless"),
             ),
         ),
         SettingsCategory(
@@ -641,17 +662,6 @@ class SettingsActivity : Activity() {
             ),
         ),
         SettingsCategory(
-            id = "themes",
-            icon = "◈",
-            title = "Themes & Appearance",
-            description = "Keyboard colors, borders, gradients, and custom themes",
-            entries = listOf(
-                action("themes.editor", "Themes and appearance", "Open the theme editor with Apply and Cancel support.", "Themes & Appearance > Theme editor", SettingAction.OPEN_THEMES, "theme colour gradient image"),
-                info("themes.current", "Current theme", "The active theme is ${activeTheme.name}.", "Themes & Appearance > Current theme", "solid white black neon"),
-                info("themes.keys", "Bordered or borderless keys", "Visual key style changes do not alter touch or glide geometry.", "Themes & Appearance > Key style", "border borderless"),
-            ),
-        ),
-        SettingsCategory(
             id = "resize",
             icon = "↕",
             title = "Resize & Layout",
@@ -663,14 +673,14 @@ class SettingsActivity : Activity() {
             ),
         ),
         SettingsCategory(
-            id = "emoji",
-            icon = "☺",
-            title = "Emojis",
-            description = "Emoji panel, search, recent use, and Unicode-safe insertion",
+            id = "ai",
+            icon = "✧",
+            title = "AI Tools",
+            description = "Reserved extension points for future writing tools",
             entries = listOf(
-                info("emoji.panel", "Emoji panel", "Open Emoji from Tools without closing the keyboard.", "Emojis > Panel", "emoji"),
-                info("emoji.recent", "Recent and frequent emoji", "Recent and frequency data are kept locally with bounded storage.", "Emojis > Usage", "recent frequent"),
-                info("emoji.unicode", "Unicode-safe emoji editing", "ZWJ sequences, flags, and skin-tone sequences are preserved on insertion/deletion.", "Emojis > Unicode", "skin tone flags ZWJ"),
+                unavailable("ai.tools", "AI writing tools", "Grammar, rewrite, tone, and assistant tools are not connected in this build.", "AI Tools > Writing", "ai grammar rewrite humanise tone"),
+                unavailable("ai.provider", "AI provider and model", "Provider and model selection will appear when an approved provider is connected.", "AI Tools > Provider", "provider model ChatGPT connection"),
+                unavailable("ai.privacy", "AI data behavior", "No AI network request is made by the current keyboard build.", "AI Tools > Privacy", "network api privacy"),
             ),
         ),
         SettingsCategory(
@@ -683,16 +693,6 @@ class SettingsActivity : Activity() {
                 toggle("privacy.learning", "Personalized suggestions", "Turn private vocabulary learning and personal ranking on or off.", "Privacy & Security > Learning", ToggleKey.PERSONALIZED_SUGGESTIONS, "learning"),
                 info("privacy.voice", "Voice processing", "Audio is processed only for the active voice session and is not stored by default.", "Privacy & Security > Voice", "recording audio"),
                 info("privacy.network", "Network behavior", "Normal typing and local prediction do not require network access.", "Privacy & Security > Network", "offline network cloud"),
-            ),
-        ),
-        SettingsCategory(
-            id = "clipboard",
-            icon = "▣",
-            title = "Clipboard",
-            description = "Clipboard options are shown only when backed by this build",
-            entries = listOf(
-                unavailable("clipboard.history", "Clipboard history", "No persistent clipboard history is implemented in this build.", "Clipboard > History", "clipboard history recent clips pinned retention"),
-                unavailable("clipboard.clear", "Clear clipboard", "There is no keyboard-owned clipboard store to clear in this build.", "Clipboard > Privacy", "clear clipboard sensitive protection"),
             ),
         ),
         SettingsCategory(
