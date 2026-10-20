@@ -4,7 +4,6 @@ import android.content.ContentValues
 import android.content.Context
 import android.database.sqlite.SQLiteDatabase
 import android.database.sqlite.SQLiteOpenHelper
-import android.text.TextUtils
 
 /**
  * Local text-only clipboard history.
@@ -166,20 +165,6 @@ class ClipboardHistoryStore(context: Context) :
             """.trimIndent(),
         )
     }
-
-    private fun findByText(db: SQLiteDatabase, text: String): ClipboardItem? =
-        db.query(
-            TABLE,
-            COLUMNS,
-            "$COL_FULL_TEXT = ?",
-            arrayOf(text),
-            null,
-            null,
-            null,
-            "1",
-        ).use { cursor ->
-            if (cursor.moveToFirst()) readItem(cursor) else null
-        }
 
     private fun query(
         selection: String,
