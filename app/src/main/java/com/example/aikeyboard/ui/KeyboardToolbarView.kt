@@ -29,6 +29,7 @@ class KeyboardToolbarView(
     private val onCandidateLongPressed: (SuggestionCandidate) -> Unit,
     private val onOrderChanged: (List<String>) -> Unit,
     suggestionSlotCount: Int = 3,
+    private val fontScale: () -> Float = { 1f },
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -55,7 +56,7 @@ class KeyboardToolbarView(
         strokeJoin = Paint.Join.ROUND
     }
     private var theme = KeyboardTheme.SOLID_WHITE
-    private val suggestionSlotCount = suggestionSlotCount.coerceIn(3, 4)
+    private val fixedSuggestionSlotCount = 3
     private val handler = Handler(Looper.getMainLooper())
     private val longPress = Runnable {
         val item = centerItems.getOrNull(pressedIndex)
@@ -95,8 +96,27 @@ class KeyboardToolbarView(
     }
 
     fun setCandidates(value: List<SuggestionCandidate>) {
+        setCandidates(exactTyped = null, value = value)
+    }
+
+    /**
+     * Puts the exact current token in cell 1, then fills the remaining cells with candidates.
+     * Candidate objects retain their complete text for commit handling.
+     */
+    fun setCandidates(
+        exactTyped: SuggestionCandidate?,
+        value: List<SuggestionCandidate>,
+    ) {
         if (centerMode != CenterMode.SUGGESTIONS) return
-        candidates = value.take(suggestionSlotCount)
+        val next = ArrayList<SuggestionCandidate>(fixedSuggestionSlotCount)
+        exactTyped?.let { next += it }
+        value.forEach { candidate ->
+            if (next.size >= fixedSuggestionSlotCount) return@forEach
+            if (exactTyped == null || candidate.text != exactTyped.text) {
+                next += candidate
+            }
+        }
+        candidates = next
         invalidate()
     }
 
@@ -151,16 +171,22 @@ class KeyboardToolbarView(
         val centerLeft = edge
         val centerRight = width - edge
         val slots = if (centerMode == CenterMode.SUGGESTIONS) {
-            suggestionSlotCount
+            fixedSuggestionSlotCount
         } else {
             centerItems.size.coerceAtLeast(1)
         }
         val centerWidth = (centerRight - centerLeft) / slots
         if (centerMode == CenterMode.SUGGESTIONS) {
-            candidates.forEachIndexed { index, candidate ->
+            for (index in 0 until fixedSuggestionSlotCount) {
                 val left = centerLeft + centerWidth * index
-                if (index == pressedIndex) canvas.drawRect(left, 0f, left + centerWidth, height.toFloat(), pressedPaint)
-                drawText(canvas, candidate.text, left, left + centerWidth, containsRtl(candidate.text))
+                val right = left + centerWidth
+                if (index == pressedIndex) canvas.drawRect(left, 0f, right, height.toFloat(), pressedPaint)
+                if (index < fixedSuggestionSlotCount - 1) {
+                    canvas.drawRect(right - 1f, 0f, right, height.toFloat(), dividerPaint)
+                }
+                candidates.getOrNull(index)?.let { candidate ->
+                    drawText(canvas, candidate.text, left, right)
+                }
             }
         } else {
             centerItems.forEachIndexed { index, item ->
@@ -250,7 +276,7 @@ class KeyboardToolbarView(
         if (x < edge) return -2
         if (x >= width - edge) return -3
         val slots = if (centerMode == CenterMode.SUGGESTIONS) {
-            suggestionSlotCount
+            fixedSuggestionSlotCount
         } else {
             centerItems.size.coerceAtLeast(1)
         }
@@ -276,18 +302,13 @@ class KeyboardToolbarView(
                 centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
         }
         iconStrokePaint.color = theme.textColor
-        val half = 10f * density
-        val knob = 2.5f * density
-        val y1 = height / 2f - 8f * density
-        val y2 = height / 2f
-        val y3 = height / 2f + 8f * density
-        canvas.drawLine(centerX - half, y1, centerX + half, y1, iconStrokePaint)
-        canvas.drawLine(centerX - half, y2, centerX + half, y2, iconStrokePaint)
-        canvas.drawLine(centerX - half, y3, centerX + half, y3, iconStrokePaint)
         iconStrokePaint.style = Paint.Style.FILL
-        canvas.drawCircle(centerX - 3f * density, y1, knob, iconStrokePaint)
-        canvas.drawCircle(centerX + 4f * density, y2, knob, iconStrokePaint)
-        canvas.drawCircle(centerX - 1f * density, y3, knob, iconStrokePaint)
+        val centerY = height / 2f
+        val radius = 2.2f * density
+        val spacing = 7f * density
+        canvas.drawCircle(centerX, centerY - spacing, radius, iconStrokePaint)
+        canvas.drawCircle(centerX, centerY, radius, iconStrokePaint)
+        canvas.drawCircle(centerX, centerY + spacing, radius, iconStrokePaint)
         iconStrokePaint.style = Paint.Style.STROKE
     }
 
@@ -313,9 +334,9 @@ class KeyboardToolbarView(
         }
         iconStrokePaint.color = theme.textColor
         val centerY = height / 2f
-        val capsuleWidth = 7f * density
-        val capsuleTop = centerY - 13f * density
-        val capsuleBottom = centerY + 3f * density
+        val capsuleWidth = 5.5f * density
+        val capsuleTop = centerY - 10f * density
+        val capsuleBottom = centerY + 2f * density
         iconStrokePaint.style = Paint.Style.FILL
         canvas.drawRoundRect(
             centerX - capsuleWidth,
@@ -327,42 +348,38 @@ class KeyboardToolbarView(
             iconStrokePaint,
         )
         iconStrokePaint.style = Paint.Style.STROKE
-        iconStrokePaint.strokeWidth = 2.6f * density
-        val arcLeft = centerX - 13f * density
-        val arcTop = centerY - 5f * density
-        val arcRight = centerX + 13f * density
-        val arcBottom = centerY + 10f * density
+        iconStrokePaint.strokeWidth = 2.1f * density
+        val arcLeft = centerX - 11f * density
+        val arcTop = centerY - 4f * density
+        val arcRight = centerX + 11f * density
+        val arcBottom = centerY + 8f * density
         canvas.drawArc(arcLeft, arcTop, arcRight, arcBottom, 0f, 180f, false, iconStrokePaint)
-        canvas.drawLine(centerX, arcBottom, centerX, centerY + 16f * density, iconStrokePaint)
-        canvas.drawLine(centerX - 8f * density, centerY + 16f * density,
-            centerX + 8f * density, centerY + 16f * density, iconStrokePaint)
+        canvas.drawLine(centerX, arcBottom, centerX, centerY + 13f * density, iconStrokePaint)
+        canvas.drawLine(centerX - 7f * density, centerY + 13f * density,
+            centerX + 7f * density, centerY + 13f * density, iconStrokePaint)
         iconStrokePaint.strokeWidth = 2.2f * density
     }
 
-    private fun drawText(canvas: Canvas, value: String, left: Float, right: Float, rtl: Boolean) {
-        val available = (right - left - 16f * density).roundToInt().coerceAtLeast(1)
-        val direction = if (rtl) TextDirectionHeuristics.FIRSTSTRONG_RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR
-        // Keep normal suggestions readable. Longer words step down through a few sizes before
-        // ellipsis is used; they never shrink to an unreadable label.
-        val sizes = floatArrayOf(23f, 21f, 19f, 18f)
-        var selectedSize = sizes.last()
-        for (size in sizes) {
-            textPaint.textSize = size * scaledDensity
-            selectedSize = size
-            if (textPaint.measureText(value) <= available.toFloat()) break
-        }
-        textPaint.textSize = selectedSize * scaledDensity
-        val layout = StaticLayout.Builder.obtain(value, 0, value.length, textPaint, available)
-            .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setMaxLines(1)
-            .setEllipsize(TextUtils.TruncateAt.END)
-            .setTextDirection(direction).build()
+    private fun drawText(canvas: Canvas, value: String, left: Float, right: Float) {
+        val horizontalPadding = 8f * density
+        val available = (right - left - horizontalPadding * 2f).roundToInt().coerceAtLeast(1)
+        val fitted = SuggestionDisplay.fit(
+            fullText = value,
+            availableWidthPx = available.toFloat(),
+            baseTextSizePx = 23f * fontScale().coerceIn(0.75f, 1.35f) * scaledDensity,
+            scaledDensity = scaledDensity,
+            textPaint = textPaint,
+        )
+        textPaint.textSize = fitted.textSizePx
+        textPaint.textScaleX = fitted.textScaleX
+        textPaint.textAlign = Paint.Align.CENTER
         canvas.save()
-        // The center cells are a hard visual boundary. This prevents long LTR/RTL labels from
-        // ever drawing over the permanently reserved Tools and microphone cells.
         canvas.clipRect(left, 0f, right, height.toFloat())
-        canvas.translate(left + 8f * density, ((height - layout.height) / 2f).coerceAtLeast(0f))
-        layout.draw(canvas)
+        val centerX = (left + right) / 2f
+        val baseline = height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f
+        canvas.drawText(fitted.text, centerX, baseline, textPaint)
         canvas.restore()
+        textPaint.textScaleX = 1f
     }
 
     private fun containsRtl(value: String): Boolean = value.any { it.code in 0x0590..0x08FF }
@@ -371,7 +388,7 @@ class KeyboardToolbarView(
         const val DEFAULT_SUGGESTION_SLOT_COUNT = 3
         const val EDGE_TOOLS = -2
         const val EDGE_MIC = -3
-        const val EDGE_WIDTH_DP = 56f
+        const val EDGE_WIDTH_DP = 46f
         // Keep suggestions at a clearly readable keyboard-label size. This changes only the
         // text paint; the fixed toolbar height and touch geometry remain unchanged.
         const val SUGGESTION_TEXT_SIZE_SP = 23f
