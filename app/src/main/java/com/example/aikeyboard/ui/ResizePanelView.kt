@@ -47,11 +47,15 @@ class ResizePanelView(
     private var startConfiguration = configuration
     private var dragTarget = DragTarget.NONE
     private var startY = 0f
+    private var gestureActive = false
     private var theme = KeyboardTheme.NEON
 
     init {
         isClickable = true
         isFocusable = true
+        // Keep Back routed through this overlay while Resize is active. The overlay owns the
+        // workspace touch/focus state; normal keyboard focus is restored when it is removed.
+        requestFocus()
         setBackgroundColor(Color.TRANSPARENT)
     }
 
@@ -186,6 +190,7 @@ class ResizePanelView(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
+                gestureActive = true
                 startY = event.y
                 startConfiguration = configuration
                 // Recompute bounds before hit-testing so an immediate tap after opening cannot
@@ -215,6 +220,7 @@ class ResizePanelView(
             }
 
             MotionEvent.ACTION_MOVE -> {
+                if (!gestureActive) return true
                 val deltaDp = ((startY - event.y) / density).roundToInt()
                 configuration = when (dragTarget) {
                     DragTarget.TOP -> resizeFromTop(deltaDp)
@@ -233,20 +239,31 @@ class ResizePanelView(
             }
 
             MotionEvent.ACTION_UP -> {
-                when (dragTarget) {
+                if (!gestureActive) return true
+                val completedTarget = dragTarget
+                dragTarget = DragTarget.NONE
+                gestureActive = false
+                invalidate()
+                when (completedTarget) {
                     DragTarget.RESET -> onReset()
                     DragTarget.DONE -> onDone(configuration)
                     else -> Unit
                 }
-                dragTarget = DragTarget.NONE
-                invalidate()
                 performClick()
                 return true
             }
 
             MotionEvent.ACTION_CANCEL -> {
+                // Android may cancel this pointer stream when the live preview changes the IME
+                // window/layout. That is a gesture cancellation, not a request to leave Resize.
+                // Reverting only this gesture keeps Reset/Move/Done usable for the next touch.
+                val cancelledStart = startConfiguration
                 dragTarget = DragTarget.NONE
-                onCancel()
+                gestureActive = false
+                configuration = cancelledStart
+                post {
+                    if (isAttachedToWindow) onConfigurationChanged(cancelledStart)
+                }
                 invalidate()
                 return true
             }
@@ -255,9 +272,16 @@ class ResizePanelView(
     }
 
     override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
-        if (keyCode == KeyEvent.KEYCODE_BACK && event.action == KeyEvent.ACTION_UP) {
-            onCancel()
-            return true
+        if (keyCode == KeyEvent.KEYCODE_BACK) {
+            if (event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0) {
+                return true
+            }
+            if (event.action == KeyEvent.ACTION_UP) {
+                gestureActive = false
+                dragTarget = DragTarget.NONE
+                onCancel()
+                return true
+            }
         }
         return super.onKeyPreIme(keyCode, event)
     }
@@ -305,6 +329,12 @@ class ResizePanelView(
                 range.last,
             ),
         )
+    }
+
+    override fun onDetachedFromWindow() {
+        gestureActive = false
+        dragTarget = DragTarget.NONE
+        super.onDetachedFromWindow()
     }
 
     override fun performClick(): Boolean {
