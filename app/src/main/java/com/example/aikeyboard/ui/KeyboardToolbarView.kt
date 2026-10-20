@@ -56,7 +56,7 @@ class KeyboardToolbarView(
         strokeJoin = Paint.Join.ROUND
     }
     private var theme = KeyboardTheme.SOLID_WHITE
-    private val suggestionSlotCount = suggestionSlotCount.coerceIn(3, 4)
+    private val fixedSuggestionSlotCount = 3
     private val handler = Handler(Looper.getMainLooper())
     private val longPress = Runnable {
         val item = centerItems.getOrNull(pressedIndex)
@@ -96,8 +96,27 @@ class KeyboardToolbarView(
     }
 
     fun setCandidates(value: List<SuggestionCandidate>) {
+        setCandidates(exactTyped = null, value = value)
+    }
+
+    /**
+     * Puts the exact current token in cell 1, then fills the remaining cells with candidates.
+     * Candidate objects retain their complete text for commit handling.
+     */
+    fun setCandidates(
+        exactTyped: SuggestionCandidate?,
+        value: List<SuggestionCandidate>,
+    ) {
         if (centerMode != CenterMode.SUGGESTIONS) return
-        candidates = value.take(suggestionSlotCount)
+        val next = ArrayList<SuggestionCandidate>(fixedSuggestionSlotCount)
+        exactTyped?.let { next += it }
+        value.forEach { candidate ->
+            if (next.size >= fixedSuggestionSlotCount) return@forEach
+            if (exactTyped == null || candidate.text != exactTyped.text) {
+                next += candidate
+            }
+        }
+        candidates = next
         invalidate()
     }
 
@@ -152,16 +171,22 @@ class KeyboardToolbarView(
         val centerLeft = edge
         val centerRight = width - edge
         val slots = if (centerMode == CenterMode.SUGGESTIONS) {
-            suggestionSlotCount
+            fixedSuggestionSlotCount
         } else {
             centerItems.size.coerceAtLeast(1)
         }
         val centerWidth = (centerRight - centerLeft) / slots
         if (centerMode == CenterMode.SUGGESTIONS) {
-            candidates.forEachIndexed { index, candidate ->
+            for (index in 0 until fixedSuggestionSlotCount) {
                 val left = centerLeft + centerWidth * index
-                if (index == pressedIndex) canvas.drawRect(left, 0f, left + centerWidth, height.toFloat(), pressedPaint)
-                drawText(canvas, candidate.text, left, left + centerWidth, containsRtl(candidate.text))
+                val right = left + centerWidth
+                if (index == pressedIndex) canvas.drawRect(left, 0f, right, height.toFloat(), pressedPaint)
+                if (index < fixedSuggestionSlotCount - 1) {
+                    canvas.drawRect(right - 1f, 0f, right, height.toFloat(), dividerPaint)
+                }
+                candidates.getOrNull(index)?.let { candidate ->
+                    drawText(canvas, candidate.text, left, right, containsRtl(candidate.text))
+                }
             }
         } else {
             centerItems.forEachIndexed { index, item ->
@@ -251,7 +276,7 @@ class KeyboardToolbarView(
         if (x < edge) return -2
         if (x >= width - edge) return -3
         val slots = if (centerMode == CenterMode.SUGGESTIONS) {
-            suggestionSlotCount
+            fixedSuggestionSlotCount
         } else {
             centerItems.size.coerceAtLeast(1)
         }
@@ -343,28 +368,32 @@ class KeyboardToolbarView(
     private fun drawText(canvas: Canvas, value: String, left: Float, right: Float, rtl: Boolean) {
         val available = (right - left - 16f * density).roundToInt().coerceAtLeast(1)
         val direction = if (rtl) TextDirectionHeuristics.FIRSTSTRONG_RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR
-        // Keep normal suggestions readable. Longer words step down through a few sizes before
-        // ellipsis is used; they never shrink to an unreadable label.
-        val scale = fontScale().coerceIn(0.75f, 1.35f)
-        val sizes = floatArrayOf(23f, 21f, 19f, 18f).map { it * scale }
-        var selectedSize = sizes.last()
-        for (size in sizes) {
-            textPaint.textSize = size * scaledDensity
-            selectedSize = size
-            if (textPaint.measureText(value) <= available.toFloat()) break
-        }
-        textPaint.textSize = selectedSize * scaledDensity
-        val layout = StaticLayout.Builder.obtain(value, 0, value.length, textPaint, available)
-            .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setMaxLines(1)
-            .setEllipsize(TextUtils.TruncateAt.END)
-            .setTextDirection(direction).build()
+        val fitted = SuggestionDisplay.fit(
+            fullText = value,
+            availableWidthPx = available.toFloat(),
+            baseTextSizePx = 23f * fontScale().coerceIn(0.75f, 1.35f) * scaledDensity,
+            scaledDensity = scaledDensity,
+            textPaint = textPaint,
+        )
+        textPaint.textSize = fitted.textSizePx
+        textPaint.textScaleX = fitted.textScaleX
+        val layout = StaticLayout.Builder.obtain(
+            fitted.text,
+            0,
+            fitted.text.length,
+            textPaint,
+            available,
+        ).setAlignment(Layout.Alignment.ALIGN_CENTER)
+            .setIncludePad(false)
+            .setMaxLines(1)
+            .setTextDirection(direction)
+            .build()
         canvas.save()
-        // The center cells are a hard visual boundary. This prevents long LTR/RTL labels from
-        // ever drawing over the permanently reserved Tools and microphone cells.
         canvas.clipRect(left, 0f, right, height.toFloat())
         canvas.translate(left + 8f * density, ((height - layout.height) / 2f).coerceAtLeast(0f))
         layout.draw(canvas)
         canvas.restore()
+        textPaint.textScaleX = 1f
     }
 
     private fun containsRtl(value: String): Boolean = value.any { it.code in 0x0590..0x08FF }
