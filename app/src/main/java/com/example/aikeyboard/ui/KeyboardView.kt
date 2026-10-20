@@ -211,7 +211,8 @@ class KeyboardView(
 
                 val label = key.labelFor(shifted)
                 textPaint.color = theme.textColor
-                textPaint.textSize = keyTextSizeSp(key) * scaledDensity
+                val rowHeightPx = (metrics.bottom - metrics.top - keyInset * 2f).coerceAtLeast(1f)
+                textPaint.textSize = keyTextSizeSp(key, rowHeightPx) * scaledDensity
                 val textWidth = textPaint.measureText(label)
                 textPaint.getFontMetrics(fontMetrics)
                 val baseline = (metrics.top + metrics.bottom - fontMetrics.ascent - fontMetrics.descent) / 2f
@@ -346,12 +347,9 @@ class KeyboardView(
      */
     fun visualKeyBlockHeightDp(availableHeightDp: Int): Int {
         val normalRows = (keyboardLayout.rows.size - 1).coerceAtLeast(1)
-        val available = availableHeightDp.toFloat()
         val gap = ROW_GAP_DP * normalRows
-        val maxNormalHeight = ((available - BOTTOM_ROW_HEIGHT_DP - gap) / normalRows)
-            .coerceAtLeast(1f)
-        val normalHeight = min(NORMAL_KEY_HEIGHT_DP, maxNormalHeight)
-        return (normalHeight * normalRows + gap + BOTTOM_ROW_HEIGHT_DP).roundToInt()
+        val (normalHeight, bottomHeight) = rowHeightsDp(availableHeightDp.toFloat(), normalRows)
+        return (normalHeight * normalRows + gap + bottomHeight).roundToInt()
     }
 
     override fun onDetachedFromWindow() {
@@ -379,13 +377,12 @@ class KeyboardView(
 
         val normalRows = (keyboardLayout.rows.size - 1).coerceAtLeast(1)
         val rowGap = ROW_GAP_DP * density
-        val bottomRowHeight = BOTTOM_ROW_HEIGHT_DP * density
-        val availableHeight = height.toFloat()
-        val maxNormalHeight = (
-            availableHeight - bottomRowHeight - rowGap * normalRows
-        ) / normalRows
-        val normalRowHeight = min(NORMAL_KEY_HEIGHT_DP * density, maxNormalHeight)
-            .coerceAtLeast(1f)
+        val (normalRowHeightDp, bottomRowHeightDp) = rowHeightsDp(
+            availableHeightDp = height / density,
+            normalRows = normalRows,
+        )
+        val normalRowHeight = normalRowHeightDp * density
+        val bottomRowHeight = bottomRowHeightDp * density
         var visualTop = 0f
         for (rowIndex in keyboardLayout.rows.indices) {
             val row = keyboardLayout.rows[rowIndex]
@@ -422,11 +419,37 @@ class KeyboardView(
         glideGeometry = geometry
     }
 
-    private fun keyTextSizeSp(key: KeySpec): Float = when (key.type) {
-        KeyType.SPACE -> SPACE_LABEL_TEXT_SIZE_SP
-        KeyType.MODE_SWITCH -> MODE_LABEL_TEXT_SIZE_SP
-        KeyType.CHARACTER -> MAIN_KEY_TEXT_SIZE_SP
-        else -> ACTION_TEXT_SIZE_SP
+    private fun keyTextSizeSp(key: KeySpec, rowHeightPx: Float): Float {
+        val baseRowHeightDp = if (
+            key.type == KeyType.SPACE ||
+            key.type == KeyType.MODE_SWITCH ||
+            key.type == KeyType.ENTER
+        ) BOTTOM_ROW_HEIGHT_DP else NORMAL_KEY_HEIGHT_DP
+        val scale = (rowHeightPx / density / baseRowHeightDp)
+            .coerceIn(MIN_LABEL_SCALE, MAX_LABEL_SCALE)
+        val baseTextSize = when (key.type) {
+            KeyType.SPACE -> SPACE_LABEL_TEXT_SIZE_SP
+            KeyType.MODE_SWITCH -> MODE_LABEL_TEXT_SIZE_SP
+            KeyType.CHARACTER -> MAIN_KEY_TEXT_SIZE_SP
+            else -> ACTION_TEXT_SIZE_SP
+        }
+        return baseTextSize * scale
+    }
+
+    /**
+     * Distributes only the explicit Resize height delta across the normal and bottom rows.
+     * The compact default keeps the approved key proportions; larger/smaller settings genuinely
+     * stretch/shrink the key boxes instead of merely translating the keyboard.
+     */
+    private fun rowHeightsDp(availableHeightDp: Float, normalRows: Int): Pair<Float, Float> {
+        val delta = availableHeightDp - RESIZE_BASE_HEIGHT_DP
+        val normalHeight = (
+            NORMAL_KEY_HEIGHT_DP + delta * NORMAL_HEIGHT_DELTA_SHARE / normalRows
+        ).coerceIn(MIN_NORMAL_KEY_HEIGHT_DP, MAX_NORMAL_KEY_HEIGHT_DP)
+        val bottomHeight = (
+            BOTTOM_ROW_HEIGHT_DP + delta * BOTTOM_HEIGHT_DELTA_SHARE
+        ).coerceIn(MIN_BOTTOM_ROW_HEIGHT_DP, MAX_BOTTOM_ROW_HEIGHT_DP)
+        return normalHeight to bottomHeight
     }
 
     /**
@@ -727,6 +750,15 @@ class KeyboardView(
         const val NORMAL_KEY_WIDTH_DP = 31f
         const val NORMAL_KEY_HEIGHT_DP = 47f
         const val BOTTOM_ROW_HEIGHT_DP = 50f
+        const val RESIZE_BASE_HEIGHT_DP = 270f
+        const val NORMAL_HEIGHT_DELTA_SHARE = 0.75f
+        const val BOTTOM_HEIGHT_DELTA_SHARE = 0.25f
+        const val MIN_NORMAL_KEY_HEIGHT_DP = 40f
+        const val MAX_NORMAL_KEY_HEIGHT_DP = 110f
+        const val MIN_BOTTOM_ROW_HEIGHT_DP = 44f
+        const val MAX_BOTTOM_ROW_HEIGHT_DP = 92f
+        const val MIN_LABEL_SCALE = 0.9f
+        const val MAX_LABEL_SCALE = 1.25f
         const val SHIFT_KEY_WIDTH_DP = 48f
         const val BACKSPACE_KEY_WIDTH_DP = 49f
         const val SPACE_KEY_WIDTH_DP = 138f
