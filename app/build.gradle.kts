@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.aikeyboard"
         minSdk = 24
         targetSdk = 35
-        versionCode = 13
-        versionName = "1.3.0"
+        versionCode = 14
+        versionName = "1.4.0"
     }
 
     buildTypes {
@@ -40,4 +40,4 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
-// v13 release build: Resize Done persistence/IME restoration fix.
+// v14 release build: bounded three-cell suggestion strip and exact typed-word preservation.
