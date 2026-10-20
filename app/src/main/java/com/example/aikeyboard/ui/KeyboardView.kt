@@ -131,7 +131,7 @@ class KeyboardView(
     init {
         isFocusable = true
         isClickable = true
-        contentDescription = "Keyboard. Space language and language switch key available."
+        contentDescription = "Keyboard. Space: ${activeSpaceLabel()}. Switch language."
         setBackgroundColor(BACKGROUND_COLOR)
     }
 
@@ -580,12 +580,14 @@ class KeyboardView(
         return result
     }
 
+    private fun activeSpaceLabel(): String = when (state.language) {
+        KeyboardLanguage.ENGLISH -> "English"
+        KeyboardLanguage.URDU -> "اردو"
+        KeyboardLanguage.ROMAN_URDU -> "Roman Urdu"
+    }
+
     private fun displayLabel(key: KeySpec, shifted: Boolean): String = when (key.type) {
-        KeyType.SPACE -> when (state.language) {
-            KeyboardLanguage.ENGLISH -> "English"
-            KeyboardLanguage.URDU -> "اردو"
-            KeyboardLanguage.ROMAN_URDU -> "Roman Urdu"
-        }
+        KeyType.SPACE -> activeSpaceLabel()
         else -> key.labelFor(shifted)
     }
 
