@@ -29,6 +29,7 @@ class KeyboardToolbarView(
     private val onCandidateLongPressed: (SuggestionCandidate) -> Unit,
     private val onOrderChanged: (List<String>) -> Unit,
     suggestionSlotCount: Int = 3,
+    private val fontScale: () -> Float = { 1f },
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -344,7 +345,8 @@ class KeyboardToolbarView(
         val direction = if (rtl) TextDirectionHeuristics.FIRSTSTRONG_RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR
         // Keep normal suggestions readable. Longer words step down through a few sizes before
         // ellipsis is used; they never shrink to an unreadable label.
-        val sizes = floatArrayOf(23f, 21f, 19f, 18f)
+        val scale = fontScale().coerceIn(0.75f, 1.35f)
+        val sizes = floatArrayOf(23f, 21f, 19f, 18f).map { it * scale }
         var selectedSize = sizes.last()
         for (size in sizes) {
             textPaint.textSize = size * scaledDensity
