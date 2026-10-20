@@ -2,6 +2,8 @@ package com.example.aikeyboard.ime
 
 import android.inputmethodservice.InputMethodService
 import android.content.BroadcastReceiver
+import android.content.ClipDescription
+import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -19,6 +21,8 @@ import android.view.WindowInsets
 import android.widget.FrameLayout
 import android.widget.EditText
 import android.widget.LinearLayout
+import com.example.aikeyboard.clipboard.ClipboardHistoryStore
+import com.example.aikeyboard.clipboard.ClipboardPanelView
 import com.example.aikeyboard.core.CompositionController
 import com.example.aikeyboard.core.CompositionSnapshot
 import com.example.aikeyboard.core.DefaultKeyboardLayoutProvider
@@ -62,6 +66,7 @@ import com.example.aikeyboard.ui.FixedImeLayout
 import com.example.aikeyboard.ui.LanguagePanelView
 import com.example.aikeyboard.ui.ResizePanelView
 import com.example.aikeyboard.ui.ToolsPanelView
+import java.util.concurrent.Executors
 import kotlin.math.roundToInt
 
 /** Android IME lifecycle boundary. All text editing is delegated to the core typing engine. */
@@ -75,6 +80,8 @@ class KeyboardInputMethodService : InputMethodService() {
     private lateinit var learningController: PersonalLearningController
     private lateinit var keyboardSettings: SharedPreferencesKeyboardSettings
     private lateinit var personalVocabulary: PersonalVocabularyStore
+    private lateinit var clipboardHistory: ClipboardHistoryStore
+    private lateinit var systemClipboard: ClipboardManager
     private lateinit var glideController: GlideController
     private lateinit var themeStore: ThemeStore
     private lateinit var emojiUsageStore: EmojiUsageStore
@@ -91,6 +98,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var toolsPanel: ToolsPanelView? = null
     private var voiceController: VoiceController? = null
     private var emojiPanel: EmojiPanelView? = null
+    private var clipboardPanel: ClipboardPanelView? = null
     private var safeAreaView: View? = null
     private var safeAreaHeightDp = DEFAULT_SAFE_AREA_HEIGHT_DP
     private var navigationInsetDp = 0
@@ -105,6 +113,10 @@ class KeyboardInputMethodService : InputMethodService() {
     // Local history shadow used by rapid text commits; it avoids InputConnection reads per key.
     private var fastHistorySnapshot: KeyboardEditHistory.EditorTextSnapshot? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private val clipboardCaptureExecutor = Executors.newSingleThreadExecutor()
+    private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
+        capturePrimaryClipboard()
+    }
     private val themeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             refreshTheme()
@@ -135,6 +147,9 @@ class KeyboardInputMethodService : InputMethodService() {
     override fun onCreate() {
         super.onCreate()
         keyboardSettings = SharedPreferencesKeyboardSettings(this)
+        clipboardHistory = ClipboardHistoryStore(this)
+        systemClipboard = getSystemService(ClipboardManager::class.java)
+        systemClipboard.addPrimaryClipChangedListener(clipboardListener)
         themeStore = ThemeStore(this)
         emojiUsageStore = EmojiUsageStore(this)
         activeTheme = themeStore.activeTheme()
@@ -339,6 +354,7 @@ class KeyboardInputMethodService : InputMethodService() {
         toolbarView?.showToolbarActions()
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
         keyboardView?.invalidate()
+        capturePrimaryClipboard()
     }
 
     override fun onStartInputView(info: EditorInfo, restarting: Boolean) {
@@ -354,6 +370,7 @@ class KeyboardInputMethodService : InputMethodService() {
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
         latestCompositionSnapshot = null
         keyboardView?.invalidate()
+        capturePrimaryClipboard()
         requestCompositionSnapshot()
     }
 
@@ -443,6 +460,11 @@ class KeyboardInputMethodService : InputMethodService() {
     override fun onDestroy() {
         keyboardView?.cancelPendingInput()
         toolbarView?.cancelPendingInput()
+        clipboardPanel?.dispose()
+        clipboardPanel = null
+        runCatching { systemClipboard.removePrimaryClipChangedListener(clipboardListener) }
+        clipboardCaptureExecutor.shutdownNow()
+        clipboardHistory.close()
         keyboardView = null
         toolbarView = null
         contentContainer = null
@@ -992,10 +1014,38 @@ class KeyboardInputMethodService : InputMethodService() {
         }
     }
 
+    private fun capturePrimaryClipboard() {
+        if (
+            !::clipboardHistory.isInitialized ||
+            !::systemClipboard.isInitialized ||
+            !::keyboardSettings.isInitialized ||
+            !keyboardSettings.clipboardHistoryEnabled() ||
+            !::keyboardState.isInitialized ||
+            keyboardState.editorInputState.isSensitive
+        ) return
+
+        val clip = runCatching { systemClipboard.primaryClip }.getOrNull() ?: return
+        if (clip.itemCount == 0 || !clip.description.hasMimeType("text/plain")) return
+        if (
+            Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
+            clip.description.extras?.getBoolean(ClipDescription.EXTRA_IS_SENSITIVE, false) == true
+        ) return
+        val text = clip.getItemAt(0).text?.toString() ?: return
+        if (text.isBlank() || ClipboardHistoryStore.isLikelySensitive(text)) return
+
+        clipboardCaptureExecutor.execute {
+            if (clipboardHistory.recordCopied(text)) {
+                mainHandler.post { clipboardPanel?.refreshFromStore() }
+            }
+        }
+    }
+
     private fun setKeyboardContent() {
         voiceController?.close()
         voiceController = null
         emojiPanel = null
+        clipboardPanel?.dispose()
+        clipboardPanel = null
         contentMode = ContentMode.KEYBOARD
         resizePanel?.let { workspaceContainer?.removeView(it) }
         resizePanel = null
@@ -1061,6 +1111,7 @@ class KeyboardInputMethodService : InputMethodService() {
             "resize" -> showResize()
             "themes" -> openThemeActivity()
             "emoji" -> showEmoji()
+            "clipboard" -> showClipboard()
             "undo" -> performUndo()
             "redo" -> performRedo()
             else -> setKeyboardContent()
@@ -1084,6 +1135,43 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun openThemeActivity() {
         startActivity(Intent(this, ThemeActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+    }
+
+    private fun showClipboard() {
+        if (keyboardState.editorInputState.isSensitive) {
+            android.widget.Toast.makeText(
+                this,
+                "Clipboard history is unavailable in sensitive fields",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
+        contentMode = ContentMode.CLIPBOARD
+        clearSuggestions()
+        toolbarView?.showToolbarActions()
+        toolbarView?.setClosePanelMode(true)
+        val container = contentContainer ?: return
+        container.removeAllViews()
+        val panel = ClipboardPanelView(
+            context = this,
+            store = clipboardHistory,
+            onPaste = { text ->
+                currentInputConnection?.let { connection ->
+                    withInternalEdit { connection.commitText(text, 1) }
+                }
+            },
+            onBack = ::setKeyboardContent,
+        )
+        clipboardPanel = panel
+        panel.applyTheme(activeTheme)
+        container.addView(
+            panel,
+            FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                FrameLayout.LayoutParams.MATCH_PARENT,
+            ),
+        )
+        capturePrimaryClipboard()
     }
 
     private fun showEmoji() {
@@ -1414,6 +1502,7 @@ class KeyboardInputMethodService : InputMethodService() {
         activeTheme = themeStore.activeTheme()
         toolbarView?.applyTheme(activeTheme)
         keyboardView?.applyTheme(activeTheme)
+        clipboardPanel?.applyTheme(activeTheme)
         safeAreaView?.setBackgroundColor(activeTheme.backgroundColor)
     }
 
@@ -1431,7 +1520,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun pxToDp(value: Int): Int =
         (value / resources.displayMetrics.density).roundToInt().coerceAtLeast(0)
 
-    private enum class ContentMode { KEYBOARD, TOOLS, RESIZE, EMOJI, VOICE, LANGUAGE }
+    private enum class ContentMode { KEYBOARD, TOOLS, RESIZE, EMOJI, CLIPBOARD, VOICE, LANGUAGE }
 
     private companion object {
         const val TOOLBAR_HEIGHT_DP = 48
