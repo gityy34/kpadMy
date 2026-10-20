@@ -41,6 +41,7 @@ import com.example.aikeyboard.prediction.SuggestionCandidate
 import com.example.aikeyboard.prediction.SuggestionSelectionEngine
 import com.example.aikeyboard.settings.SharedPreferencesKeyboardSettings
 import com.example.aikeyboard.settings.KeyboardSettings
+import com.example.aikeyboard.settings.ResizeConfiguration
 import com.example.aikeyboard.settings.SettingsActivity
 import com.example.aikeyboard.theme.KeyboardTheme
 import com.example.aikeyboard.theme.ThemeActivity
@@ -89,7 +90,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var safeAreaView: View? = null
     private var safeAreaHeightDp = DEFAULT_SAFE_AREA_HEIGHT_DP
     private var navigationInsetDp = 0
-    private var heightBeforeResizeDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
+    private var resizeConfigurationBefore = ResizeConfiguration()
     private var nextWordPredictionRequested = false
     private var backspaceSelection: BackspaceSelection? = null
     private var internalEditDepth = 0
@@ -143,7 +144,7 @@ class KeyboardInputMethodService : InputMethodService() {
         val toolbar = KeyboardToolbarView(
             context = this,
             initialOrder = keyboardSettings.toolbarOrder(),
-            onTools = ::showTools,
+            onTools = ::onToolsPressed,
             onMic = ::showVoice,
             onToolbarAction = ::onToolbarAction,
             onCandidateSelected = ::onSuggestionSelected,
@@ -167,7 +168,11 @@ class KeyboardInputMethodService : InputMethodService() {
                     if (result) editHistory.record(beforeEdit, editHistory.capture(connection))
                     result
                 }
-                if (committed) recordLearningBoundary(key)
+                if (committed) {
+                    recordLearningBoundary(key)
+                    // Keep the session history through all typing, then end it after Send/Enter.
+                    if (key.type == KeyType.ENTER) editHistory.clear()
+                }
                 updateToolbarForKey(key)
                 // This only schedules a bounded background read after the synchronous commit.
                 // It never sits in front of the key-to-InputConnection path.
@@ -208,7 +213,7 @@ class KeyboardInputMethodService : InputMethodService() {
                 val nextInsetDp = pxToDp(bottomInsetPx)
                 if (nextInsetDp != navigationInsetDp) {
                     navigationInsetDp = nextInsetDp
-                    post { updateImeHeight(keyboardSettings.keyboardHeightDp()) }
+                    post { updateImeHeight(keyboardSettings.resizeConfiguration(currentOrientation())) }
                 }
                 insets
             }
@@ -448,11 +453,32 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun onSpaceCursorMoved(direction: Int) {
         val connection = currentInputConnection ?: return
-        val keyCode = if (direction > 0) KeyEvent.KEYCODE_DPAD_RIGHT else KeyEvent.KEYCODE_DPAD_LEFT
-        // Let the active editor perform cursor movement. This preserves its own Unicode,
-        // selection, and grapheme-boundary behavior instead of manually editing UTF-16 text.
-        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, keyCode))
-        connection.sendKeyEvent(KeyEvent(KeyEvent.ACTION_UP, keyCode))
+        val extracted = connection.getExtractedText(ExtractedTextRequest().apply {
+            hintMaxChars = 0
+        }, 0) ?: return
+        val text = extracted.text?.toString() ?: return
+        val start = extracted.selectionStart
+        val end = extracted.selectionEnd
+        if (start < 0 || end < 0) return
+
+        // Collapse an existing selection in the travel direction, then move by one Unicode
+        // code point. The position is always clamped to the actual editor text boundaries.
+        val cursor = if (start != end) {
+            if (direction > 0) maxOf(start, end) else minOf(start, end)
+        } else {
+            start
+        }
+        val next = if (direction > 0) {
+            if (cursor >= text.length) return
+            cursor + Character.charCount(text.codePointAt(cursor))
+        } else {
+            if (cursor <= 0) return
+            val candidate = cursor - 1
+            if (candidate > 0 && Character.isLowSurrogate(text[candidate]) &&
+                Character.isHighSurrogate(text[candidate - 1])
+            ) candidate - 1 else candidate
+        }.coerceIn(0, text.length)
+        if (next != cursor) connection.setSelection(next, next)
     }
 
     private fun onBackspaceSwipeStarted(): Boolean {
@@ -657,15 +683,13 @@ class KeyboardInputMethodService : InputMethodService() {
         toolsPanel = null
         refreshTheme()
         toolbarView?.showToolbarActions()
+        toolbarView?.setClosePanelMode(false)
         val container = contentContainer ?: return
         container.removeAllViews()
+        val configuration = keyboardSettings.resizeConfiguration(currentOrientation())
+        updateImeHeight(configuration)
         keyboardView?.let { view ->
-            val heightDp = keyboardSettings.keyboardHeightDp()
-            updateImeHeight(heightDp)
-            view.layoutParams = FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            )
+            updateKeyboardGeometry(view, configuration)
             container.addView(view)
         }
         requestCompositionSnapshot()
@@ -679,6 +703,7 @@ class KeyboardInputMethodService : InputMethodService() {
         contentMode = ContentMode.TOOLS
         clearSuggestions()
         toolbarView?.showToolbarActions()
+        toolbarView?.setClosePanelMode(true)
         contentContainer?.let { container ->
             container.removeAllViews()
             val tools = ToolsPanelView(
@@ -698,6 +723,14 @@ class KeyboardInputMethodService : InputMethodService() {
                 FrameLayout.LayoutParams.MATCH_PARENT,
                 FrameLayout.LayoutParams.MATCH_PARENT,
             ))
+        }
+    }
+
+    private fun onToolsPressed() {
+        if (contentMode == ContentMode.TOOLS || toolbarView?.isClosePanelMode() == true) {
+            setKeyboardContent()
+        } else {
+            showTools()
         }
     }
 
@@ -853,43 +886,41 @@ class KeyboardInputMethodService : InputMethodService() {
         contentMode = ContentMode.RESIZE
         clearSuggestions()
         toolbarView?.showToolbarActions()
-        heightBeforeResizeDp = keyboardSettings.keyboardHeightDp()
-        var resizeHeightDp = heightBeforeResizeDp
+        resizeConfigurationBefore = keyboardSettings.resizeConfiguration(currentOrientation())
+        var draftConfiguration = resizeConfigurationBefore
         val container = contentContainer ?: return
         container.removeAllViews()
+        updateImeHeight(draftConfiguration)
         keyboardView?.let { view ->
-            updateKeyboardHeight(view, resizeHeightDp)
-            updateImeHeight(resizeHeightDp)
-            container.addView(view, FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                dp(resizeHeightDp),
-                Gravity.BOTTOM,
-            ))
+            updateKeyboardGeometry(view, draftConfiguration)
+            container.addView(view)
         }
+
         lateinit var panel: ResizePanelView
         panel = ResizePanelView(
             context = this,
-            initialHeightDp = resizeHeightDp,
-            onHeightChanged = { value ->
-                resizeHeightDp = value
-                keyboardView?.let { updateKeyboardHeight(it, value) }
-                updateImeHeight(value)
+            initialConfiguration = draftConfiguration,
+            onConfigurationChanged = { value ->
+                draftConfiguration = value
+                applyResizePreview(value)
             },
             onDone = {
-                keyboardSettings.setKeyboardHeightDp(resizeHeightDp)
+                keyboardSettings.setResizeConfiguration(
+                    draftConfiguration,
+                    currentOrientation(),
+                )
                 setKeyboardContent()
             },
             onCancel = {
-                keyboardView?.let { updateKeyboardHeight(it, heightBeforeResizeDp) }
                 setKeyboardContent()
             },
             onReset = {
-                resizeHeightDp = KeyboardSettings.DEFAULT_KEYBOARD_HEIGHT_DP
-                keyboardView?.let { updateKeyboardHeight(it, resizeHeightDp) }
-                updateImeHeight(resizeHeightDp)
-                panel.setHeightDp(resizeHeightDp)
+                draftConfiguration = ResizeConfiguration()
+                applyResizePreview(draftConfiguration)
+                panel.setConfiguration(draftConfiguration)
             },
         )
+        panel.applyTheme(activeTheme)
         resizePanel = panel
         container.addView(panel, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
@@ -897,27 +928,55 @@ class KeyboardInputMethodService : InputMethodService() {
         ))
     }
 
-    private fun updateKeyboardHeight(view: KeyboardView, heightDp: Int) {
-        view.layoutParams = (view.layoutParams ?: FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT, dp(heightDp), Gravity.BOTTOM
-        )).apply {
-            height = dp(heightDp)
-            if (this is FrameLayout.LayoutParams) gravity = Gravity.BOTTOM
+    private fun applyResizePreview(configuration: ResizeConfiguration) {
+        val value = configuration.clamped()
+        updateImeHeight(value)
+        keyboardView?.let { view ->
+            updateKeyboardGeometry(view, value)
+        }
+        resizePanel?.setConfiguration(value)
+    }
+
+    private fun updateKeyboardGeometry(
+        view: KeyboardView,
+        configuration: ResizeConfiguration,
+    ) {
+        val value = configuration.clamped()
+        view.layoutParams = (view.layoutParams as? FrameLayout.LayoutParams
+            ?: FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                dp(value.keyboardHeightDp),
+            )).apply {
+            width = FrameLayout.LayoutParams.MATCH_PARENT
+            height = dp(value.keyboardHeightDp)
+            gravity = Gravity.TOP
+            topMargin = dp(value.topOffsetDp)
+            bottomMargin = 0
+            leftMargin = 0
+            rightMargin = 0
         }
         view.requestLayout()
         view.invalidate()
     }
 
     private fun updateImeHeight(keyboardHeightDp: Int) {
-        updateSafeAreaHeight(keyboardHeightDp)
+        updateImeHeight(ResizeConfiguration(keyboardHeightDp = keyboardHeightDp))
+    }
+
+    private fun updateImeHeight(configuration: ResizeConfiguration) {
+        val value = configuration.clamped()
+        updateSafeAreaHeight(value.keyboardHeightDp)
+        val workspaceHeightDp = value.topOffsetDp +
+            value.keyboardHeightDp +
+            value.bottomSpaceDp
         val container = contentContainer ?: return
         (container.layoutParams as? LinearLayout.LayoutParams)?.let {
-            it.height = dp(keyboardHeightDp)
+            it.height = dp(workspaceHeightDp)
             it.weight = 0f
             container.layoutParams = it
         }
         val root = rootView ?: return
-        val totalHeight = dp(TOOLBAR_HEIGHT_DP + keyboardHeightDp + safeAreaHeightDp)
+        val totalHeight = dp(TOOLBAR_HEIGHT_DP + workspaceHeightDp + safeAreaHeightDp)
         root.setFixedHeightPx(totalHeight)
         root.layoutParams = (root.layoutParams ?: LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -951,6 +1010,8 @@ class KeyboardInputMethodService : InputMethodService() {
         keyboardView?.applyTheme(activeTheme)
         safeAreaView?.setBackgroundColor(activeTheme.backgroundColor)
     }
+
+    private fun currentOrientation(): Int = resources.configuration.orientation
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
 
