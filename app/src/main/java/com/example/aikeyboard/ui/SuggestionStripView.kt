@@ -168,6 +168,14 @@ class SuggestionStripView(
         } else {
             TextDirectionHeuristics.FIRSTSTRONG_LTR
         }
+        val sizes = floatArrayOf(23f, 21f, 19f, 18f)
+        var selectedSize = sizes.last()
+        for (size in sizes) {
+            textPaint.textSize = size * scaledDensity
+            selectedSize = size
+            if (textPaint.measureText(text) <= availableWidth.toFloat()) break
+        }
+        textPaint.textSize = selectedSize * scaledDensity
         val layout = StaticLayout.Builder.obtain(
             text,
             0,
