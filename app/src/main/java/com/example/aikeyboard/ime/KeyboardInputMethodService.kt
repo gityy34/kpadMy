@@ -928,10 +928,18 @@ class KeyboardInputMethodService : InputMethodService() {
                     draftConfiguration,
                     currentOrientation(),
                 )
-                setKeyboardContent()
+                // Finish the touch dispatch before replacing the resize overlay. Rebuilding the
+                // IME hierarchy synchronously from ACTION_UP can detach the input view.
+                mainHandler.post {
+                    if (contentMode == ContentMode.RESIZE) setKeyboardContent()
+                }
             },
             onCancel = {
-                setKeyboardContent()
+                // Cancel is also deferred so a BACK/ACTION_CANCEL event cannot detach the IME
+                // while ResizePanelView is still dispatching it.
+                mainHandler.post {
+                    if (contentMode == ContentMode.RESIZE) setKeyboardContent()
+                }
             },
             onReset = {
                 draftConfiguration = ResizeConfiguration()
