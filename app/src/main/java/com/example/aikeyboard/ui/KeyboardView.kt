@@ -14,6 +14,7 @@ import com.example.aikeyboard.core.KeySpec
 import com.example.aikeyboard.core.KeyType
 import com.example.aikeyboard.core.KeyboardLayout
 import com.example.aikeyboard.core.KeyboardLayoutProvider
+import com.example.aikeyboard.core.KeyboardLanguage
 import com.example.aikeyboard.core.KeyboardState
 import com.example.aikeyboard.glide.GlideGesture
 import com.example.aikeyboard.glide.GlideKeyGeometry
@@ -214,7 +215,15 @@ class KeyboardView(
                     keyPaint.style = Paint.Style.FILL
                 }
 
-                val label = key.labelFor(shifted)
+                if (key.type == KeyType.LANGUAGE_SWITCH) {
+                    drawLanguageSwitchIcon(
+                        canvas,
+                        (left + right) / 2f,
+                        (metrics.top + metrics.bottom) / 2f,
+                    )
+                    continue
+                }
+                val label = displayLabel(key, shifted)
                 textPaint.color = theme.textColor
                 val rowHeightPx = (metrics.bottom - metrics.top - keyInset * 2f).coerceAtLeast(1f)
                 textPaint.textSize = keyTextSizeSp(key, rowHeightPx) *
@@ -550,6 +559,42 @@ class KeyboardView(
         return result
     }
 
+    private fun displayLabel(key: KeySpec, shifted: Boolean): String = when (key.type) {
+        KeyType.SPACE -> when (state.language) {
+            KeyboardLanguage.ENGLISH -> "English"
+            KeyboardLanguage.URDU -> "اردو"
+            KeyboardLanguage.ROMAN_URDU -> "Roman Urdu"
+        }
+        else -> key.labelFor(shifted)
+    }
+
+    /** Compact globe vector; its bounds are inset from the key rectangle by construction. */
+    private fun drawLanguageSwitchIcon(canvas: Canvas, centerX: Float, centerY: Float) {
+        keyPaint.color = theme.textColor
+        keyPaint.style = Paint.Style.STROKE
+        keyPaint.strokeWidth = 1.8f * density
+        keyPaint.strokeCap = Paint.Cap.ROUND
+        keyPaint.strokeJoin = Paint.Join.ROUND
+        val radius = 8.5f * density
+        canvas.drawCircle(centerX, centerY, radius, keyPaint)
+        canvas.drawOval(
+            centerX - 4.2f * density,
+            centerY - radius,
+            centerX + 4.2f * density,
+            centerY + radius,
+            keyPaint,
+        )
+        canvas.drawOval(
+            centerX - radius,
+            centerY - 4.2f * density,
+            centerX + radius,
+            centerY + 4.2f * density,
+            keyPaint,
+        )
+        canvas.drawLine(centerX - radius, centerY, centerX + radius, centerY, keyPaint)
+        keyPaint.style = Paint.Style.FILL
+    }
+
     private fun updateGlidePath(x: Float, y: Float) {
         val distance = hypot(x - lastGlideX, y - lastGlideY)
         if (distance < GLIDE_SAMPLE_DISTANCE_PX * density) return
@@ -721,7 +766,7 @@ class KeyboardView(
         val insertAt = lastRow.keys.indexOfFirst { it.type == KeyType.MODE_SWITCH }
             .let { if (it < 0) 0 else it + 1 }
         val keys = lastRow.keys.toMutableList().apply {
-            add(insertAt, KeySpec.languageSwitch("🌐"))
+            add(insertAt, KeySpec.languageSwitch(""))
         }.toTypedArray()
         val rows = base.rows.copyOf()
         rows[rows.lastIndex] = com.example.aikeyboard.core.KeyboardRow(keys)
