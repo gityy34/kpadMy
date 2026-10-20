@@ -190,12 +190,28 @@ class KeyboardInputMethodService : InputMethodService() {
                 // recreating the IME process.
                 val connection = currentInputConnection
                 val insertedText = fastInsertText(key)
-                val fastCandidate = insertedText?.let { fastHistorySeed() }
-                val useFastHistory = insertedText != null &&
-                    fastCandidate != null && !fastCandidate.hasSelection
-                val useSlowHistory = isTextEditKey(key) && !useFastHistory &&
-                    (insertedText == null || fastCandidate?.hasSelection == true)
-                if (insertedText == null && isTextEditKey(key)) fastHistorySnapshot = null
+                val fastCandidate = when {
+                    insertedText != null -> fastHistorySeed()
+                    key.type == KeyType.BACKSPACE -> fastHistorySeed()
+                    else -> null
+                }
+                val deletedLength = if (key.type == KeyType.BACKSPACE &&
+                    fastCandidate != null && !fastCandidate.hasSelection) {
+                    fastDeleteLength(fastCandidate)
+                } else {
+                    null
+                }
+                val useFastHistory = fastCandidate != null && !fastCandidate.hasSelection &&
+                    (insertedText != null || deletedLength != null)
+                val useSlowHistory = when {
+                    key.type == KeyType.BACKSPACE -> fastCandidate != null && !useFastHistory
+                    insertedText != null -> fastCandidate?.hasSelection == true
+                    isTextEditKey(key) -> true
+                    else -> false
+                }
+                if (insertedText == null && deletedLength == null && isTextEditKey(key)) {
+                    fastHistorySnapshot = null
+                }
                 val beforeEdit = when {
                     useFastHistory -> fastCandidate
                     useSlowHistory -> editHistory.capture(connection)
@@ -203,8 +219,12 @@ class KeyboardInputMethodService : InputMethodService() {
                 }
                 val committed = withInternalEdit {
                     val result = typingEngine.handle(key, connection)
-                    if (result && useFastHistory && beforeEdit != null && insertedText != null) {
-                        val afterEdit = fastHistoryAfter(beforeEdit, insertedText)
+                    if (result && useFastHistory && beforeEdit != null) {
+                        val afterEdit = if (insertedText != null) {
+                            fastHistoryAfter(beforeEdit, insertedText)
+                        } else {
+                            fastHistoryAfterDelete(beforeEdit, deletedLength ?: 0)
+                        }
                         editHistory.record(beforeEdit, afterEdit)
                         fastHistorySnapshot = afterEdit
                     } else if (result && useSlowHistory) {
@@ -789,6 +809,36 @@ class KeyboardInputMethodService : InputMethodService() {
         val nextCursor = before.selectionStart + insertedText.length
         return before.copy(
             beforeCursor = boundedHistoryContext(before.beforeCursor + insertedText),
+            selectedText = null,
+            selectionStart = nextCursor,
+            selectionEnd = nextCursor,
+        )
+    }
+
+    private fun fastDeleteLength(
+        before: KeyboardEditHistory.EditorTextSnapshot,
+    ): Int? {
+        val text = before.beforeCursor
+        if (text.isEmpty()) return null
+        val codePoint = text.codePointBefore(text.length)
+        val type = Character.getType(codePoint)
+        if (type == Character.NON_SPACING_MARK.toInt() ||
+            type == Character.COMBINING_SPACING_MARK.toInt() ||
+            type == Character.ENCLOSING_MARK.toInt() ||
+            codePoint == 0x200C || codePoint == 0x200D) {
+            return null
+        }
+        return Character.charCount(codePoint)
+    }
+
+    private fun fastHistoryAfterDelete(
+        before: KeyboardEditHistory.EditorTextSnapshot,
+        deletedLength: Int,
+    ): KeyboardEditHistory.EditorTextSnapshot {
+        val nextCursor = (before.selectionStart - deletedLength).coerceAtLeast(0)
+        val end = (before.beforeCursor.length - deletedLength).coerceAtLeast(0)
+        return before.copy(
+            beforeCursor = before.beforeCursor.substring(0, end),
             selectedText = null,
             selectionStart = nextCursor,
             selectionEnd = nextCursor,
