@@ -82,6 +82,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var keyboardView: KeyboardView? = null
     private var toolbarView: KeyboardToolbarView? = null
     private var contentContainer: FrameLayout? = null
+    private var workspaceContainer: FrameLayout? = null
     private var rootView: FixedImeLayout? = null
     private var contentMode = ContentMode.KEYBOARD
     private var resizePanel: ResizePanelView? = null
@@ -199,6 +200,11 @@ class KeyboardInputMethodService : InputMethodService() {
 
         val container = FrameLayout(this)
         contentContainer = container
+        val workspace = FrameLayout(this).apply {
+            clipChildren = true
+            clipToPadding = true
+        }
+        workspaceContainer = workspace
         rootView = FixedImeLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             clipChildren = true
@@ -213,25 +219,30 @@ class KeyboardInputMethodService : InputMethodService() {
                 val nextInsetDp = pxToDp(bottomInsetPx)
                 if (nextInsetDp != navigationInsetDp) {
                     navigationInsetDp = nextInsetDp
-                    post { updateImeHeight(keyboardSettings.resizeConfiguration(currentOrientation())) }
+                    post { updateImeHeight(activeResizeConfiguration()) }
                 }
                 insets
             }
             addView(toolbar, LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT, dp(TOOLBAR_HEIGHT_DP)
             ))
-            addView(container, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(keyboardSettings.keyboardHeightDp())
+            workspace.addView(container, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                dp(keyboardSettings.keyboardHeightDp()),
             ))
-            // The safe area is a real, fixed row. Keyboard and glide geometry never extend into it.
-            addView(View(this@KeyboardInputMethodService).apply {
+            workspace.addView(View(this@KeyboardInputMethodService).apply {
                 safeAreaView = this
                 setBackgroundColor(activeTheme.backgroundColor)
-            }, LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT, dp(safeAreaHeightDp)
+            }, FrameLayout.LayoutParams(
+                FrameLayout.LayoutParams.MATCH_PARENT,
+                dp(safeAreaHeightDp),
+            ))
+            addView(workspace, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(keyboardSettings.keyboardHeightDp() + safeAreaHeightDp),
             ))
         }
-        updateImeHeight(keyboardSettings.keyboardHeightDp())
+        updateImeHeight(keyboardSettings.resizeConfiguration(currentOrientation()))
         setKeyboardContent()
         return rootView!!
     }
@@ -315,6 +326,7 @@ class KeyboardInputMethodService : InputMethodService() {
         keyboardView = null
         toolbarView = null
         contentContainer = null
+        workspaceContainer = null
         rootView = null
         resizePanel = null
         voiceController?.close()
@@ -679,6 +691,7 @@ class KeyboardInputMethodService : InputMethodService() {
         voiceController?.close()
         voiceController = null
         contentMode = ContentMode.KEYBOARD
+        resizePanel?.let { workspaceContainer?.removeView(it) }
         resizePanel = null
         toolsPanel = null
         refreshTheme()
@@ -889,6 +902,7 @@ class KeyboardInputMethodService : InputMethodService() {
         resizeConfigurationBefore = keyboardSettings.resizeConfiguration(currentOrientation())
         var draftConfiguration = resizeConfigurationBefore
         val container = contentContainer ?: return
+        val workspace = workspaceContainer ?: return
         container.removeAllViews()
         updateImeHeight(draftConfiguration)
         keyboardView?.let { view ->
@@ -904,7 +918,8 @@ class KeyboardInputMethodService : InputMethodService() {
                 draftConfiguration = value
                 applyResizePreview(value)
             },
-            onDone = {
+            onDone = { value ->
+                draftConfiguration = value.clamped()
                 keyboardSettings.setResizeConfiguration(
                     draftConfiguration,
                     currentOrientation(),
@@ -919,13 +934,29 @@ class KeyboardInputMethodService : InputMethodService() {
                 applyResizePreview(draftConfiguration)
                 panel.setConfiguration(draftConfiguration)
             },
+            visualKeyBlockHeightDp = { heightDp ->
+                keyboardView?.visualKeyBlockHeightDp(heightDp)
+                    ?: (heightDp - INTERNAL_BOTTOM_ROOM_DP).coerceAtLeast(1)
+            },
+            bottomBoundaryRangeDp = ::resizeBoundaryRangeDp,
         )
         panel.applyTheme(activeTheme)
         resizePanel = panel
-        container.addView(panel, FrameLayout.LayoutParams(
+        // Overlay the complete keyboard workspace, including the safe area. This prevents the
+        // lower handle from being clipped at contentContainer's old bottom.
+        workspace.addView(panel, FrameLayout.LayoutParams(
             FrameLayout.LayoutParams.MATCH_PARENT,
             FrameLayout.LayoutParams.MATCH_PARENT,
         ))
+    }
+
+    private fun applyResizePreview(configuration: ResizeConfiguration) {
+        val value = configuration.clamped()
+        updateImeHeight(value)
+        keyboardView?.let { view ->
+            updateKeyboardGeometry(view, value)
+        }
+        resizePanel?.setConfiguration(value)
     }
 
     private fun applyResizePreview(configuration: ResizeConfiguration) {
@@ -950,11 +981,12 @@ class KeyboardInputMethodService : InputMethodService() {
             width = FrameLayout.LayoutParams.MATCH_PARENT
             height = dp(value.keyboardHeightDp)
             gravity = Gravity.TOP
-            topMargin = dp(value.topOffsetDp)
+            topMargin = 0
             bottomMargin = 0
             leftMargin = 0
             rightMargin = 0
         }
+        view.translationY = 0f
         view.requestLayout()
         view.invalidate()
     }
@@ -966,17 +998,44 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun updateImeHeight(configuration: ResizeConfiguration) {
         val value = configuration.clamped()
         updateSafeAreaHeight(value.keyboardHeightDp)
+        val workspace = workspaceContainer ?: return
+        val container = contentContainer ?: return
         val workspaceHeightDp = value.topOffsetDp +
             value.keyboardHeightDp +
-            value.bottomSpaceDp
-        val container = contentContainer ?: return
-        (container.layoutParams as? LinearLayout.LayoutParams)?.let {
-            it.height = dp(workspaceHeightDp)
-            it.weight = 0f
+            value.bottomSpaceDp +
+            safeAreaHeightDp
+
+        (container.layoutParams as? FrameLayout.LayoutParams)?.let {
+            it.width = FrameLayout.LayoutParams.MATCH_PARENT
+            it.height = value.topOffsetDp + value.keyboardHeightDp
+            it.topMargin = 0
             container.layoutParams = it
         }
+
+        safeAreaView?.let { safe ->
+            safe.layoutParams = (safe.layoutParams as? FrameLayout.LayoutParams
+                ?: FrameLayout.LayoutParams(
+                    FrameLayout.LayoutParams.MATCH_PARENT,
+                    dp(safeAreaHeightDp),
+                )).apply {
+                width = FrameLayout.LayoutParams.MATCH_PARENT
+                height = dp(safeAreaHeightDp)
+                topMargin = dp(value.topOffsetDp + value.keyboardHeightDp + value.bottomSpaceDp)
+            }
+            safe.requestLayout()
+        }
+
+        workspace.layoutParams = (workspace.layoutParams ?: LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            dp(workspaceHeightDp),
+        )).apply {
+            width = LinearLayout.LayoutParams.MATCH_PARENT
+            height = dp(workspaceHeightDp)
+        }
+        workspace.requestLayout()
+
         val root = rootView ?: return
-        val totalHeight = dp(TOOLBAR_HEIGHT_DP + workspaceHeightDp + safeAreaHeightDp)
+        val totalHeight = dp(TOOLBAR_HEIGHT_DP + workspaceHeightDp)
         root.setFixedHeightPx(totalHeight)
         root.layoutParams = (root.layoutParams ?: LinearLayout.LayoutParams(
             LinearLayout.LayoutParams.MATCH_PARENT,
@@ -985,22 +1044,24 @@ class KeyboardInputMethodService : InputMethodService() {
         root.requestLayout()
     }
 
-    private fun updateSafeAreaHeight(keyboardHeightDp: Int) {
-        // The approved reference distance is the TOTAL space from the visible bottom edge of
-        // the bottom row to the end of the IME. The keyboard view can contain unused room when
-        // its saved resize height is larger than the compact visual key block, so subtract that
-        // room before applying the system-safe area. This prevents double-counting insets.
-        val visualBlockDp = keyboardView?.visualKeyBlockHeightDp(keyboardHeightDp)
-            ?: keyboardHeightDp
-        val unusedKeyboardRoomDp = (keyboardHeightDp - visualBlockDp).coerceAtLeast(0)
-        safeAreaHeightDp = (
-            TOTAL_BOTTOM_REGION_DP - navigationInsetDp - unusedKeyboardRoomDp
-        ).coerceAtLeast(MIN_SAFE_AREA_HEIGHT_DP)
-        val safe = safeAreaView ?: return
-        safe.layoutParams = (safe.layoutParams ?: LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT, dp(safeAreaHeightDp)
-        )).apply { height = dp(safeAreaHeightDp) }
-        safe.requestLayout()
+    private fun resizeBoundaryRangeDp(configuration: ResizeConfiguration): IntRange {
+        val visualBlockDp = keyboardView?.visualKeyBlockHeightDp(configuration.keyboardHeightDp)
+            ?: (configuration.keyboardHeightDp - INTERNAL_BOTTOM_ROOM_DP).coerceAtLeast(1)
+        val workspaceBottomDp = configuration.topOffsetDp +
+            configuration.keyboardHeightDp +
+            configuration.bottomSpaceDp +
+            safeAreaHeightDp
+        val availableDownDp = (
+            workspaceBottomDp - configuration.topOffsetDp - visualBlockDp
+        ).coerceAtLeast(0).coerceAtMost(
+            ResizeConfiguration.MAX_BOTTOM_BOUNDARY_OFFSET_DP,
+        )
+        val availableUpDp = (
+            visualBlockDp - MIN_RESIZE_BOUNDARY_HEIGHT_DP
+        ).coerceAtLeast(0).coerceAtMost(
+            -ResizeConfiguration.MIN_BOTTOM_BOUNDARY_OFFSET_DP,
+        )
+        return -availableUpDp..availableDownDp
     }
 
     private fun refreshTheme() {
