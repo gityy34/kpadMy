@@ -56,6 +56,10 @@ interface KeyboardSettings {
 
     fun setShowLanguageSwitchKey(show: Boolean) = Unit
 
+    fun clipboardHistoryEnabled(): Boolean = true
+
+    fun setClipboardHistoryEnabled(enabled: Boolean) = Unit
+
     fun keyboardHeightDp(): Int = DEFAULT_KEYBOARD_HEIGHT_DP
 
     fun setKeyboardHeightDp(heightDp: Int) = Unit
@@ -149,6 +153,13 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         preferences.edit().putBoolean(KEY_SHOW_LANGUAGE_SWITCH, show).apply()
     }
 
+    override fun clipboardHistoryEnabled(): Boolean =
+        preferences.getBoolean(KEY_CLIPBOARD_HISTORY_ENABLED, true)
+
+    override fun setClipboardHistoryEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_CLIPBOARD_HISTORY_ENABLED, enabled).apply()
+    }
+
     override fun keyboardHeightDp(): Int =
         resizeConfiguration(currentOrientation()).keyboardHeightDp
 
@@ -214,6 +225,7 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         private const val KEY_FONT_SIZE_LEVEL = "font_size_level"
         private const val KEY_EMOJI_SIZE_LEVEL = "emoji_size_level"
         private const val KEY_SHOW_LANGUAGE_SWITCH = "show_language_switch_key"
+        private const val KEY_CLIPBOARD_HISTORY_ENABLED = "clipboard_history_enabled"
         private const val KEY_KEYBOARD_HEIGHT_DP = "keyboard_height_dp"
         private const val KEY_RESIZE_HEIGHT_DP = "resize_height_dp"
         private const val KEY_RESIZE_TOP_OFFSET_DP = "resize_top_offset_dp"
