@@ -125,6 +125,10 @@ class KeyboardInputMethodService : InputMethodService() {
     @Volatile
     private var preGestureSnapshot: CompositionSnapshot? = null
 
+    // Only the candidates rendered for the latest composition may be committed.
+    private var renderedSuggestionGeneration = Long.MIN_VALUE
+    private var renderedSuggestionTexts: Set<String> = emptySet()
+
     override fun onCreate() {
         super.onCreate()
         keyboardSettings = SharedPreferencesKeyboardSettings(this)
@@ -485,26 +489,47 @@ class KeyboardInputMethodService : InputMethodService() {
             editorInputState = keyboardState.editorInputState,
             activeLanguage = keyboardState.language,
         ) { snapshot ->
-            latestCompositionSnapshot = snapshot
-            if (contentMode != ContentMode.KEYBOARD) return@requestSnapshot
-            if (snapshot.currentWord.isEmpty()) {
-                val showNextWord = nextWordPredictionRequested && !endsSentence(snapshot.textBeforeCursor)
-                if (!showNextWord) {
-                    predictionController.clear()
-                    toolbarView?.showToolbarActions()
-                    return@requestSnapshot
+            // CompositionController reads the editor off the input path. All UI and prediction
+            // ownership changes are marshalled back to the main thread.
+            mainHandler.post {
+                if (contentMode != ContentMode.KEYBOARD ||
+                    compositionController.snapshot().generation != snapshot.generation
+                ) {
+                    return@post
                 }
-            }
-            toolbarView?.showSuggestions()
-            predictionController.request(snapshot) { result ->
-                mainHandler.post {
-                    val current = latestCompositionSnapshot
-                    if (contentMode != ContentMode.KEYBOARD ||
-                        toolbarView?.isSuggestionsMode() != true ||
-                        result.requestId != predictionController.latestRequestId() ||
-                        current?.generation != result.snapshot.generation
-                    ) return@post
-                    toolbarView?.setCandidates(exactTypedCandidate(result.snapshot), result.candidates)
+                latestCompositionSnapshot = snapshot
+                if (snapshot.currentWord.isEmpty()) {
+                    val showNextWord =
+                        nextWordPredictionRequested && !endsSentence(snapshot.textBeforeCursor)
+                    if (!showNextWord) {
+                        predictionController.clear()
+                        toolbarView?.showToolbarActions()
+                        renderedSuggestionGeneration = Long.MIN_VALUE
+                        renderedSuggestionTexts = emptySet()
+                        return@post
+                    }
+                }
+                toolbarView?.showSuggestions()
+                predictionController.request(snapshot) { result ->
+                    mainHandler.post {
+                        val current = latestCompositionSnapshot
+                        if (contentMode != ContentMode.KEYBOARD &&
+                            toolbarView?.isSuggestionsMode() != true
+                        ) {
+                            return@post
+                        }
+                        if (toolbarView?.isSuggestionsMode() == true &&
+                            result.requestId == predictionController.latestRequestId() &&
+                            current?.generation == result.snapshot.generation &&
+                            compositionController.snapshot().generation == result.snapshot.generation
+                        ) {
+                            val exact = exactTypedCandidate(result.snapshot)
+                            toolbarView?.setCandidates(exact, result.candidates)
+                            renderedSuggestionGeneration = result.snapshot.generation
+                            renderedSuggestionTexts =
+                                (listOfNotNull(exact?.text) + result.candidates.map { it.text }).toSet()
+                        }
+                    }
                 }
             }
         }
@@ -513,6 +538,12 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun onSuggestionSelected(candidate: SuggestionCandidate) {
         if (contentMode != ContentMode.KEYBOARD) return
         val snapshot = latestCompositionSnapshot ?: return
+        if (!isCurrentRenderedCandidate(candidate, snapshot)) {
+            // A displayed candidate can outlive a newer keystroke. Never apply it to a
+            // different composition; request fresh suggestions instead.
+            requestCompositionSnapshot()
+            return
+        }
         val connection = currentInputConnection
         fastHistorySnapshot = null
         val beforeEdit = editHistory.capture(connection)
@@ -536,7 +567,7 @@ class KeyboardInputMethodService : InputMethodService() {
                 val candidate = recognition.candidates.firstOrNull()
                 if (candidate == null || recognition.confidence < MIN_GLIDE_CONFIDENCE) {
                     if (recognition.candidates.isNotEmpty()) {
-                        toolbarView?.setCandidates(recognition.candidates)
+                        setRenderedCandidates(snapshot?.generation ?: Long.MIN_VALUE, recognition.candidates)
                     }
                     requestCompositionSnapshot()
                     return@post
@@ -557,7 +588,7 @@ class KeyboardInputMethodService : InputMethodService() {
                             explicitlyAccepted = true,
                         )
                     }
-                    toolbarView?.setCandidates(recognition.candidates)
+                    setRenderedCandidates(snapshot?.generation ?: Long.MIN_VALUE, recognition.candidates)
                 }
                 preGestureSnapshot = null
                 requestCompositionSnapshot()
@@ -746,7 +777,8 @@ class KeyboardInputMethodService : InputMethodService() {
     )
 
     private fun onSuggestionLongPressed(candidate: SuggestionCandidate) {
-        if (!candidate.isPersonal) return
+        val snapshot = latestCompositionSnapshot ?: return
+        if (!candidate.isPersonal || !isCurrentRenderedCandidate(candidate, snapshot)) return
         val word = learningControllerWord(candidate)
         learningController.forget(word)
         predictionController.clear()
@@ -911,8 +943,26 @@ class KeyboardInputMethodService : InputMethodService() {
     private fun clearSuggestions() {
         latestCompositionSnapshot = null
         nextWordPredictionRequested = false
+        renderedSuggestionGeneration = Long.MIN_VALUE
+        renderedSuggestionTexts = emptySet()
         predictionController.clear()
         toolbarView?.clearCandidates()
+    }
+
+    private fun isCurrentRenderedCandidate(
+        candidate: SuggestionCandidate,
+        snapshot: CompositionSnapshot,
+    ): Boolean =
+        snapshot.generation == renderedSuggestionGeneration &&
+            candidate.text in renderedSuggestionTexts
+
+    private fun setRenderedCandidates(
+        generation: Long,
+        candidates: List<SuggestionCandidate>,
+    ) {
+        renderedSuggestionGeneration = generation
+        renderedSuggestionTexts = candidates.map { it.text }.toSet()
+        toolbarView?.setCandidates(candidates)
     }
 
     private fun updateToolbarForKey(key: KeySpec) {
@@ -1083,6 +1133,14 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun showVoice() {
+        if (keyboardState.editorInputState.isSensitive) {
+            android.widget.Toast.makeText(
+                this,
+                "Voice typing is unavailable in sensitive fields",
+                android.widget.Toast.LENGTH_SHORT,
+            ).show()
+            return
+        }
         contentMode = ContentMode.VOICE
         clearSuggestions()
         toolbarView?.showToolbarActions()
