@@ -1311,6 +1311,7 @@ class KeyboardInputMethodService : InputMethodService() {
         const val MIN_SAFE_AREA_HEIGHT_DP = 0
         const val MIN_GLIDE_CONFIDENCE = 48
         const val MAX_BACKSPACE_WORD_CONTEXT = 512
+        const val MAX_HISTORY_CONTEXT_UTF16 = 512
         const val BACKSPACE_SWIPE_STEP_DP = 14f
         const val INTERNAL_BOTTOM_ROOM_DP = 55
         const val MIN_RESIZE_BOUNDARY_HEIGHT_DP = 48
