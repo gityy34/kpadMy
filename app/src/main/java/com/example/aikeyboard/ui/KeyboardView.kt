@@ -131,6 +131,7 @@ class KeyboardView(
     init {
         isFocusable = true
         isClickable = true
+        contentDescription = "Keyboard. Space language and language switch key available."
         setBackgroundColor(BACKGROUND_COLOR)
     }
 
@@ -226,8 +227,7 @@ class KeyboardView(
                 val label = displayLabel(key, shifted)
                 textPaint.color = theme.textColor
                 val rowHeightPx = (metrics.bottom - metrics.top - keyInset * 2f).coerceAtLeast(1f)
-                textPaint.textSize = keyTextSizeSp(key, rowHeightPx) *
-                    fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE) * scaledDensity
+                textPaint.textSize = fittedKeyTextSizePx(key, label, left, right, rowHeightPx)
                 val textWidth = textPaint.measureText(label)
                 textPaint.getFontMetrics(fontMetrics)
                 val baseline = (metrics.top + metrics.bottom - fontMetrics.ascent - fontMetrics.descent) / 2f
@@ -433,6 +433,27 @@ class KeyboardView(
             }
         }
         glideGeometry = geometry
+    }
+
+    private fun fittedKeyTextSizePx(
+        key: KeySpec,
+        label: String,
+        left: Float,
+        right: Float,
+        rowHeightPx: Float,
+    ): Float {
+        val base = keyTextSizeSp(key, rowHeightPx) *
+            fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE) * scaledDensity
+        if (key.type != KeyType.SPACE || label.isEmpty()) return base
+
+        val available = (right - left - keyInset * 2f - 8f * density).coerceAtLeast(1f)
+        var size = base
+        textPaint.textSize = size
+        while (textPaint.measureText(label) > available && size > 14f * scaledDensity) {
+            size *= 0.94f
+            textPaint.textSize = size
+        }
+        return size
     }
 
     private fun keyTextSizeSp(key: KeySpec, rowHeightPx: Float): Float {
