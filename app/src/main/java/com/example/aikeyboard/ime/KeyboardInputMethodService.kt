@@ -1004,7 +1004,7 @@ class KeyboardInputMethodService : InputMethodService() {
 
         (container.layoutParams as? FrameLayout.LayoutParams)?.let {
             it.width = FrameLayout.LayoutParams.MATCH_PARENT
-            it.height = value.topOffsetDp + value.keyboardHeightDp
+            it.height = dp(value.topOffsetDp + value.keyboardHeightDp)
             it.topMargin = 0
             container.layoutParams = it
         }
