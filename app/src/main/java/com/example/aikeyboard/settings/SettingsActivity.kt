@@ -25,6 +25,7 @@ import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
 import com.example.aikeyboard.R
+import com.example.aikeyboard.clipboard.ClipboardHistoryStore
 import com.example.aikeyboard.learning.PersonalVocabularyStore
 import com.example.aikeyboard.theme.KeyboardTheme
 import com.example.aikeyboard.theme.ThemeActivity
@@ -371,6 +372,9 @@ class SettingsActivity : Activity() {
                 renderCurrentPage()
             }
             SettingAction.CLEAR_PERSONAL_DATA -> confirmClear()
+            SettingAction.CLEAR_CLIPBOARD_RECENT -> confirmClipboardClear(ClipboardClearScope.RECENT)
+            SettingAction.CLEAR_CLIPBOARD_PINNED -> confirmClipboardClear(ClipboardClearScope.PINNED)
+            SettingAction.CLEAR_CLIPBOARD_ALL -> confirmClipboardClear(ClipboardClearScope.ALL)
             SettingAction.OPEN_KEYBOARD_SETUP -> startActivity(Intent(AndroidSettings.ACTION_INPUT_METHOD_SETTINGS))
             null -> Unit
         }
@@ -380,6 +384,7 @@ class SettingsActivity : Activity() {
         ToggleKey.PERSONALIZED_SUGGESTIONS -> settings.personalizedSuggestionsEnabled()
         ToggleKey.GLIDE_TYPING -> settings.glideTypingEnabled()
         ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.showLanguageSwitchKey()
+        ToggleKey.CLIPBOARD_HISTORY -> settings.clipboardHistoryEnabled()
     }
 
     private fun writeToggle(toggle: ToggleKey, value: Boolean) {
@@ -387,6 +392,7 @@ class SettingsActivity : Activity() {
             ToggleKey.PERSONALIZED_SUGGESTIONS -> settings.setPersonalizedSuggestionsEnabled(value)
             ToggleKey.GLIDE_TYPING -> settings.setGlideTypingEnabled(value)
             ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.setShowLanguageSwitchKey(value)
+            ToggleKey.CLIPBOARD_HISTORY -> settings.setClipboardHistoryEnabled(value)
         }
         notifySettingsChanged()
     }
@@ -493,6 +499,50 @@ class SettingsActivity : Activity() {
             .setPositiveButton(android.R.string.ok) { _, _ ->
                 PersonalVocabularyStore.clearPersisted(this)
                 Toast.makeText(this, "Personal data cleared", Toast.LENGTH_SHORT).show()
+            }
+            .show()
+    }
+
+    private fun confirmClipboardClear(scope: ClipboardClearScope) {
+        val (title, message, toast) = when (scope) {
+            ClipboardClearScope.RECENT -> Triple(
+                "Clear Recent Clips",
+                "Remove all unpinned Recent clips? Pinned clips will remain.",
+                "Recent clips cleared",
+            )
+            ClipboardClearScope.PINNED -> Triple(
+                "Clear Pinned Clips",
+                "Remove all pinned clips? This cannot be undone.",
+                "Pinned clips cleared",
+            )
+            ClipboardClearScope.ALL -> Triple(
+                "Clear All Clipboard Data",
+                "Remove Recent and Pinned clipboard history? Other keyboard data will remain.",
+                "All clipboard data cleared",
+            )
+        }
+        AlertDialog.Builder(this)
+            .setTitle(title)
+            .setMessage(message)
+            .setNegativeButton(android.R.string.cancel, null)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                Thread {
+                    val store = ClipboardHistoryStore(applicationContext)
+                    try {
+                        when (scope) {
+                            ClipboardClearScope.RECENT -> store.clearRecent()
+                            ClipboardClearScope.PINNED -> store.clearPinned()
+                            ClipboardClearScope.ALL -> store.clearAll()
+                        }
+                    } finally {
+                        store.close()
+                    }
+                    runOnUiThread {
+                        Toast.makeText(this, toast, Toast.LENGTH_SHORT).show()
+                        categories = buildCategories()
+                        renderCurrentPage()
+                    }
+                }.start()
             }
             .show()
     }
@@ -617,10 +667,15 @@ class SettingsActivity : Activity() {
             id = "clipboard",
             icon = "▣",
             title = "Clipboard",
-            description = "Clipboard options are shown only when backed by this build",
+            description = "Local text history with separate Recent and Pinned collections",
             entries = listOf(
-                unavailable("clipboard.history", "Clipboard history", "No persistent clipboard history is implemented in this build.", "Clipboard > History", "clipboard history recent clips pinned retention"),
-                unavailable("clipboard.clear", "Clear clipboard", "There is no keyboard-owned clipboard store to clear in this build.", "Clipboard > Privacy", "clear clipboard sensitive protection"),
+                toggle("clipboard.enabled", "Clipboard History", "Save eligible plain-text clips locally; existing pinned clips remain when this is off.", "Clipboard > History", ToggleKey.CLIPBOARD_HISTORY, "clipboard history on off enable disable"),
+                info("clipboard.recent.limit", "Recent Clips Limit", "Recent keeps exactly 8 newest unpinned items. Pinned items do not count toward this limit.", "Clipboard > Recent", "recent clips limit eight 8"),
+                info("clipboard.pinned", "Pinned Clips", "Pinned clips are separate and remain until explicitly unpinned or deleted; manage them from Tools > Clipboard.", "Clipboard > Pinned", "pinned unlimited manage"),
+                action("clipboard.clear.recent", "Clear Recent Clips", "Remove all unpinned Recent items and keep Pinned items untouched.", "Clipboard > Clear Recent", SettingAction.CLEAR_CLIPBOARD_RECENT, "clear recent"),
+                action("clipboard.clear.pinned", "Clear Pinned Clips", "Remove all intentionally pinned clips after confirmation.", "Clipboard > Clear Pinned", SettingAction.CLEAR_CLIPBOARD_PINNED, "clear pinned"),
+                action("clipboard.clear.all", "Clear All Clipboard Data", "Remove both Recent and Pinned clipboard history only.", "Clipboard > Clear All", SettingAction.CLEAR_CLIPBOARD_ALL, "clear all clipboard"),
+                info("clipboard.sensitive", "Sensitive Content Protection", "Always on: password, PIN, OTP, authentication, token-like, and Android-sensitive clips are not stored.", "Clipboard > Privacy", "sensitive password pin otp token privacy"),
             ),
         ),
         SettingsCategory(
@@ -795,6 +850,16 @@ class SettingsActivity : Activity() {
     )
 
     private enum class EntryType { INFO, ACTION, TOGGLE, PLACEHOLDER }
-    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH }
-    private enum class SettingAction { OPEN_THEMES, OPEN_APPEARANCE_CONTROLS, RESET_TOOLBAR, CLEAR_PERSONAL_DATA, OPEN_KEYBOARD_SETUP }
+    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH, CLIPBOARD_HISTORY }
+    private enum class ClipboardClearScope { RECENT, PINNED, ALL }
+    private enum class SettingAction {
+        OPEN_THEMES,
+        OPEN_APPEARANCE_CONTROLS,
+        RESET_TOOLBAR,
+        CLEAR_PERSONAL_DATA,
+        CLEAR_CLIPBOARD_RECENT,
+        CLEAR_CLIPBOARD_PINNED,
+        CLEAR_CLIPBOARD_ALL,
+        OPEN_KEYBOARD_SETUP,
+    }
 }
