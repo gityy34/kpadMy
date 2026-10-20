@@ -1061,6 +1061,27 @@ class KeyboardInputMethodService : InputMethodService() {
         return -availableUpDp..availableDownDp
     }
 
+    private fun updateSafeAreaHeight(keyboardHeightDp: Int) {
+        // Keep the total visual distance below the visible key block stable while accounting for
+        // the Android navigation inset exactly once. Any unused room inside a taller resize
+        // rectangle is subtracted from the custom safe area rather than added again.
+        val visualBlockDp = keyboardView?.visualKeyBlockHeightDp(keyboardHeightDp)
+            ?: keyboardHeightDp
+        val unusedKeyboardRoomDp = (keyboardHeightDp - visualBlockDp).coerceAtLeast(0)
+        safeAreaHeightDp = (
+            TOTAL_BOTTOM_REGION_DP - navigationInsetDp - unusedKeyboardRoomDp
+        ).coerceAtLeast(MIN_SAFE_AREA_HEIGHT_DP)
+        val safe = safeAreaView ?: return
+        safe.layoutParams = (safe.layoutParams ?: FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            dp(safeAreaHeightDp),
+        )).apply {
+            width = FrameLayout.LayoutParams.MATCH_PARENT
+            height = dp(safeAreaHeightDp)
+        }
+        safe.requestLayout()
+    }
+
     private fun refreshTheme() {
         if (!::themeStore.isInitialized) return
         activeTheme = themeStore.activeTheme()
