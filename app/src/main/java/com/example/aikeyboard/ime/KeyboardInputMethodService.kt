@@ -100,6 +100,8 @@ class KeyboardInputMethodService : InputMethodService() {
     private var inputSessionKey: String? = null
     private var inputSessionBaseKey: String? = null
     private var inputSessionGeneration = 0L
+    // Local history shadow used by rapid text commits; it avoids InputConnection reads per key.
+    private var fastHistorySnapshot: KeyboardEditHistory.EditorTextSnapshot? = null
     private val mainHandler = Handler(Looper.getMainLooper())
     private val themeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -187,10 +189,27 @@ class KeyboardInputMethodService : InputMethodService() {
                 // InputConnection is read at dispatch time because editors can change without
                 // recreating the IME process.
                 val connection = currentInputConnection
-                val beforeEdit = if (isTextEditKey(key)) editHistory.capture(connection) else null
+                val insertedText = fastInsertText(key)
+                val fastCandidate = insertedText?.let { fastHistorySeed() }
+                val useFastHistory = insertedText != null &&
+                    fastCandidate != null && !fastCandidate.hasSelection
+                val useSlowHistory = isTextEditKey(key) && !useFastHistory &&
+                    (insertedText == null || fastCandidate?.hasSelection == true)
+                if (insertedText == null && isTextEditKey(key)) fastHistorySnapshot = null
+                val beforeEdit = when {
+                    useFastHistory -> fastCandidate
+                    useSlowHistory -> editHistory.capture(connection)
+                    else -> null
+                }
                 val committed = withInternalEdit {
                     val result = typingEngine.handle(key, connection)
-                    if (result) editHistory.record(beforeEdit, editHistory.capture(connection))
+                    if (result && useFastHistory && beforeEdit != null && insertedText != null) {
+                        val afterEdit = fastHistoryAfter(beforeEdit, insertedText)
+                        editHistory.record(beforeEdit, afterEdit)
+                        fastHistorySnapshot = afterEdit
+                    } else if (result && useSlowHistory) {
+                        editHistory.record(beforeEdit, editHistory.capture(connection))
+                    }
                     result
                 }
                 if (committed) {
@@ -353,6 +372,11 @@ class KeyboardInputMethodService : InputMethodService() {
             candidatesEnd,
         )
         if (internalEditDepth == 0 && backspaceSelection == null) {
+            fastHistorySnapshot?.let { shadow ->
+                if (shadow.selectionStart != newSelStart || shadow.selectionEnd != newSelEnd) {
+                    fastHistorySnapshot = null
+                }
+            }
             editHistory.onSelectionChanged(newSelStart, newSelEnd)
         }
         compositionController.updateSelection(newSelStart, newSelEnd)
@@ -365,6 +389,7 @@ class KeyboardInputMethodService : InputMethodService() {
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         clearSuggestions()
         editHistory.clear()
+        fastHistorySnapshot = null
         inputSessionKey = null
         inputSessionBaseKey = null
         keyboardState.setEditorOptions(0)
@@ -380,6 +405,7 @@ class KeyboardInputMethodService : InputMethodService() {
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         clearSuggestions()
         editHistory.clear()
+        fastHistorySnapshot = null
         inputSessionKey = null
         inputSessionBaseKey = null
         super.onWindowHidden()
@@ -397,6 +423,7 @@ class KeyboardInputMethodService : InputMethodService() {
         voiceController?.close()
         voiceController = null
         editHistory.clear()
+        fastHistorySnapshot = null
         inputSessionKey = null
         inputSessionBaseKey = null
         runCatching { unregisterReceiver(themeReceiver) }
@@ -449,6 +476,7 @@ class KeyboardInputMethodService : InputMethodService() {
         if (contentMode != ContentMode.KEYBOARD) return
         val snapshot = latestCompositionSnapshot ?: return
         val connection = currentInputConnection
+        fastHistorySnapshot = null
         val beforeEdit = editHistory.capture(connection)
         learningController.recordAcceptedSuggestion(candidate, snapshot)
         predictionController.clear()
@@ -476,6 +504,7 @@ class KeyboardInputMethodService : InputMethodService() {
                     return@post
                 }
                 val connection = currentInputConnection
+                fastHistorySnapshot = null
                 val beforeEdit = editHistory.capture(connection)
                 val committed = withInternalEdit {
                     GlideCommitter.commit(connection, gesture, snapshot, candidate.text)
@@ -507,6 +536,7 @@ class KeyboardInputMethodService : InputMethodService() {
         // Space is committed immediately for the normal tap path. If the gesture becomes a
         // long press, remove that one just-committed space before opening the system picker.
         val connection = currentInputConnection
+        fastHistorySnapshot = null
         val beforeEdit = editHistory.capture(connection)
         withInternalEdit { connection?.deleteSurroundingText(1, 0) }
         editHistory.record(beforeEdit, editHistory.capture(connection))
@@ -521,6 +551,7 @@ class KeyboardInputMethodService : InputMethodService() {
         // remove only that Space so the editor-native cursor movement starts at the original
         // insertion point without changing surrounding text.
         val connection = currentInputConnection
+        fastHistorySnapshot = null
         val beforeEdit = editHistory.capture(connection)
         val deleted = withInternalEdit { connection?.deleteSurroundingText(1, 0) == true }
         if (deleted) {
@@ -562,6 +593,7 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun onBackspaceSwipeStarted(): Boolean {
+        fastHistorySnapshot = null
         val connection = currentInputConnection ?: return false
         if (!connection.getSelectedText(0).isNullOrEmpty()) return false
 
@@ -599,8 +631,10 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun onBackspaceSwipeFinished() {
+        fastHistorySnapshot = null
         val selection = backspaceSelection ?: return
         val connection = currentInputConnection
+        fastHistorySnapshot = null
         val beforeEdit = editHistory.capture(connection)
         withInternalEdit {
             if (connection != null && selection.start < selection.anchor) {
@@ -717,7 +751,62 @@ class KeyboardInputMethodService : InputMethodService() {
         else -> false
     }
 
+    /** Returns text that is safe to shadow locally without reading the editor per key. */
+    private fun fastInsertText(key: KeySpec): String? {
+        val text = when (key.type) {
+            KeyType.SPACE -> " "
+            KeyType.CHARACTER -> key.textFor(keyboardState.shiftActive())
+            else -> return null
+        }
+        if (text.isEmpty()) return null
+        val codePoint = text.codePointAt(0)
+        return when (codePoint) {
+            '.'.code, ','.code, '?'.code, '!'.code, ':'.code, ';'.code,
+            '؟'.code, '۔'.code, '،'.code, ')'.code, ']'.code, '}'.code -> null
+            else -> text
+        }
+    }
+
+    private fun fastHistorySeed(): KeyboardEditHistory.EditorTextSnapshot? {
+        fastHistorySnapshot?.let { return it }
+        val composition = latestCompositionSnapshot ?: return null
+        if (composition.selectionStart < 0 || composition.selectionEnd < 0) return null
+        val seed = KeyboardEditHistory.EditorTextSnapshot(
+            beforeCursor = composition.textBeforeCursor,
+            afterCursor = composition.textAfterCursor,
+            selectedText = composition.selectedText,
+            selectionStart = composition.selectionStart,
+            selectionEnd = composition.selectionEnd,
+        )
+        fastHistorySnapshot = seed
+        return seed
+    }
+
+    private fun fastHistoryAfter(
+        before: KeyboardEditHistory.EditorTextSnapshot,
+        insertedText: String,
+    ): KeyboardEditHistory.EditorTextSnapshot {
+        val nextCursor = before.selectionStart + insertedText.length
+        return before.copy(
+            beforeCursor = boundedHistoryContext(before.beforeCursor + insertedText),
+            selectedText = null,
+            selectionStart = nextCursor,
+            selectionEnd = nextCursor,
+        )
+    }
+
+    private fun boundedHistoryContext(text: String): String {
+        if (text.length <= MAX_HISTORY_CONTEXT_UTF16) return text
+        var start = text.length - MAX_HISTORY_CONTEXT_UTF16
+        if (start > 0 && Character.isLowSurrogate(text[start]) &&
+            Character.isHighSurrogate(text[start - 1])) {
+            start++
+        }
+        return text.substring(start)
+    }
+
     private fun performUndo() {
+        fastHistorySnapshot = null
         val undone = withInternalEdit { editHistory.undo(currentInputConnection) }
         if (undone) {
             toolsPanel?.invalidate()
@@ -726,6 +815,7 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun performRedo() {
+        fastHistorySnapshot = null
         val redone = withInternalEdit { editHistory.redo(currentInputConnection) }
         if (redone) {
             toolsPanel?.invalidate()
@@ -892,6 +982,7 @@ class KeyboardInputMethodService : InputMethodService() {
             usage = emojiUsageStore,
             onEmojiSelected = { emoji ->
                 val connection = currentInputConnection
+                fastHistorySnapshot = null
                 val beforeEdit = editHistory.capture(connection)
                 emojiUsageStore.record(emoji)
                 withInternalEdit { connection?.commitText(emoji, 1) }
@@ -949,6 +1040,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onTranslate = { target -> controller?.translate(target) },
             onInsert = { text ->
                 val connection = currentInputConnection
+                fastHistorySnapshot = null
                 val beforeEdit = editHistory.capture(connection)
                 withInternalEdit { connection?.commitText(text, 1) }
                 editHistory.record(beforeEdit, editHistory.capture(connection))
