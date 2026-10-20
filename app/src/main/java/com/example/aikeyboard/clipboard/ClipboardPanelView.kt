@@ -7,6 +7,7 @@ import android.os.Looper
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.GridLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -59,13 +60,13 @@ class ClipboardPanelView(
         scroll.addView(
             grid,
             ScrollView.LayoutParams(
-                LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
                 LayoutParams.WRAP_CONTENT,
             ),
         )
         addView(
             scroll,
-            LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f),
+            LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f),
         )
         buildActionBar()
         applyTheme(theme)
@@ -151,7 +152,7 @@ class ClipboardPanelView(
         }
         header.addView(pinnedTab, LayoutParams(dp(68), dp(34)))
 
-        addView(header, LayoutParams(LayoutParams.MATCH_PARENT, dp(48)))
+        addView(header, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(48)))
     }
 
     private fun buildActionBar() {
@@ -184,7 +185,7 @@ class ClipboardPanelView(
 
         actionBar.tag = actionLabel
         actionBar.visibility = View.GONE
-        addView(actionBar, LayoutParams(LayoutParams.MATCH_PARENT, dp(44)))
+        addView(actionBar, LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(44)))
     }
 
     private fun selectTab(next: Tab) {
@@ -267,7 +268,7 @@ class ClipboardPanelView(
                 contentDescription = text
             }
             grid.addView(empty, GridLayout.LayoutParams().apply {
-                width = LayoutParams.MATCH_PARENT
+                width = ViewGroup.LayoutParams.MATCH_PARENT
                 height = dp(72)
                 columnSpec = GridLayout.spec(0, 2)
                 setMargins(dp(6), dp(12), dp(6), dp(12))
@@ -330,7 +331,7 @@ class ClipboardPanelView(
             setTextColor(theme.textColor)
         }
         grid.addView(loadingLabel, GridLayout.LayoutParams().apply {
-            width = LayoutParams.MATCH_PARENT
+            width = ViewGroup.LayoutParams.MATCH_PARENT
             height = dp(72)
             columnSpec = GridLayout.spec(0, 2)
         })
