@@ -92,6 +92,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var safeAreaHeightDp = DEFAULT_SAFE_AREA_HEIGHT_DP
     private var navigationInsetDp = 0
     private var resizeConfigurationBefore = ResizeConfiguration()
+    private var resizeConfigurationWorking = ResizeConfiguration()
     private var nextWordPredictionRequested = false
     private var backspaceSelection: BackspaceSelection? = null
     private var internalEditDepth = 0
@@ -900,6 +901,7 @@ class KeyboardInputMethodService : InputMethodService() {
         clearSuggestions()
         toolbarView?.showToolbarActions()
         resizeConfigurationBefore = keyboardSettings.resizeConfiguration(currentOrientation())
+        resizeConfigurationWorking = resizeConfigurationBefore
         var draftConfiguration = resizeConfigurationBefore
         val container = contentContainer ?: return
         val workspace = workspaceContainer ?: return
@@ -916,10 +918,12 @@ class KeyboardInputMethodService : InputMethodService() {
             initialConfiguration = draftConfiguration,
             onConfigurationChanged = { value ->
                 draftConfiguration = value
+                resizeConfigurationWorking = value
                 applyResizePreview(value)
             },
             onDone = { value ->
                 draftConfiguration = value.clamped()
+                resizeConfigurationWorking = draftConfiguration
                 keyboardSettings.setResizeConfiguration(
                     draftConfiguration,
                     currentOrientation(),
@@ -931,6 +935,7 @@ class KeyboardInputMethodService : InputMethodService() {
             },
             onReset = {
                 draftConfiguration = ResizeConfiguration()
+                resizeConfigurationWorking = draftConfiguration
                 applyResizePreview(draftConfiguration)
                 panel.setConfiguration(draftConfiguration)
             },
@@ -952,15 +957,7 @@ class KeyboardInputMethodService : InputMethodService() {
 
     private fun applyResizePreview(configuration: ResizeConfiguration) {
         val value = configuration.clamped()
-        updateImeHeight(value)
-        keyboardView?.let { view ->
-            updateKeyboardGeometry(view, value)
-        }
-        resizePanel?.setConfiguration(value)
-    }
-
-    private fun applyResizePreview(configuration: ResizeConfiguration) {
-        val value = configuration.clamped()
+        resizeConfigurationWorking = value
         updateImeHeight(value)
         keyboardView?.let { view ->
             updateKeyboardGeometry(view, value)
@@ -1072,6 +1069,13 @@ class KeyboardInputMethodService : InputMethodService() {
         safeAreaView?.setBackgroundColor(activeTheme.backgroundColor)
     }
 
+    private fun activeResizeConfiguration(): ResizeConfiguration =
+        if (contentMode == ContentMode.RESIZE) {
+            resizeConfigurationWorking
+        } else {
+            keyboardSettings.resizeConfiguration(currentOrientation())
+        }
+
     private fun currentOrientation(): Int = resources.configuration.orientation
 
     private fun dp(value: Int): Int = (value * resources.displayMetrics.density).toInt()
@@ -1088,5 +1092,7 @@ class KeyboardInputMethodService : InputMethodService() {
         const val MIN_SAFE_AREA_HEIGHT_DP = 0
         const val MIN_GLIDE_CONFIDENCE = 48
         const val MAX_BACKSPACE_WORD_CONTEXT = 512
+        const val INTERNAL_BOTTOM_ROOM_DP = 55
+        const val MIN_RESIZE_BOUNDARY_HEIGHT_DP = 48
     }
 }
