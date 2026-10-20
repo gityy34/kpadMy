@@ -98,6 +98,8 @@ class KeyboardInputMethodService : InputMethodService() {
     private var backspaceSelection: BackspaceSelection? = null
     private var internalEditDepth = 0
     private var inputSessionKey: String? = null
+    private var inputSessionBaseKey: String? = null
+    private var inputSessionGeneration = 0L
     private val mainHandler = Handler(Looper.getMainLooper())
     private val themeReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -282,7 +284,7 @@ class KeyboardInputMethodService : InputMethodService() {
         refreshTheme()
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         keyboardState.setEditorInfo(attribute)
-        beginInputSession(attribute)
+        beginInputSession(attribute, restarting)
         latestCompositionSnapshot = null
         nextWordPredictionRequested = false
         clearSuggestions()
@@ -296,7 +298,7 @@ class KeyboardInputMethodService : InputMethodService() {
         refreshTheme()
         if (contentMode != ContentMode.KEYBOARD) setKeyboardContent()
         keyboardState.setEditorInfo(info)
-        beginInputSession(info)
+        ensureInputSession(info, restarting)
         latestCompositionSnapshot = null
         nextWordPredictionRequested = false
         clearSuggestions()
@@ -307,18 +309,30 @@ class KeyboardInputMethodService : InputMethodService() {
         requestCompositionSnapshot()
     }
 
-    private fun beginInputSession(info: EditorInfo) {
-        val key = buildString {
-            append(info.packageName ?: "")
-            append('|')
-            append(info.fieldId)
-            append('|')
-            append(info.inputType)
-            append('|')
-            append(info.imeOptions)
+    private fun beginInputSession(info: EditorInfo, restarting: Boolean) {
+        val baseKey = inputSessionBaseKey(info)
+        if (restarting && inputSessionKey != null && inputSessionBaseKey == baseKey) return
+
+        val sessionKey = baseKey + "|session-" + (++inputSessionGeneration)
+        editHistory.beginSession(sessionKey)
+        inputSessionKey = sessionKey
+        inputSessionBaseKey = baseKey
+    }
+
+    private fun ensureInputSession(info: EditorInfo, restarting: Boolean) {
+        if (inputSessionKey == null || inputSessionBaseKey != inputSessionBaseKey(info)) {
+            beginInputSession(info, restarting = true)
         }
-        editHistory.beginSession(key)
-        inputSessionKey = key
+    }
+
+    private fun inputSessionBaseKey(info: EditorInfo): String = buildString {
+        append(info.packageName ?: "")
+        append('|')
+        append(info.fieldId)
+        append('|')
+        append(info.inputType)
+        append('|')
+        append(info.imeOptions)
     }
 
     override fun onUpdateSelection(
@@ -351,6 +365,7 @@ class KeyboardInputMethodService : InputMethodService() {
         clearSuggestions()
         editHistory.clear()
         inputSessionKey = null
+        inputSessionBaseKey = null
         keyboardState.setEditorOptions(0)
         compositionController.reset(keyboardState.editorInputState, keyboardState.language)
         super.onFinishInput()
@@ -365,6 +380,7 @@ class KeyboardInputMethodService : InputMethodService() {
         clearSuggestions()
         editHistory.clear()
         inputSessionKey = null
+        inputSessionBaseKey = null
         super.onWindowHidden()
     }
 
@@ -381,6 +397,7 @@ class KeyboardInputMethodService : InputMethodService() {
         voiceController = null
         editHistory.clear()
         inputSessionKey = null
+        inputSessionBaseKey = null
         runCatching { unregisterReceiver(themeReceiver) }
         runCatching { unregisterReceiver(settingsReceiver) }
         predictionController.close()
