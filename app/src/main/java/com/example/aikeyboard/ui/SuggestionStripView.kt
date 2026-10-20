@@ -101,7 +101,7 @@ class SuggestionStripView(
         val slotWidth = width.toFloat() / FIXED_SLOT_COUNT
         for (slot in 0 until FIXED_SLOT_COUNT) {
             val left = slot * slotWidth
-            val right = if (slot == slotCount - 1) width.toFloat() else (slot + 1) * slotWidth
+            val right = if (slot == FIXED_SLOT_COUNT - 1) width.toFloat() else (slot + 1) * slotWidth
             if (slot == pressedSlot) canvas.drawRect(left, 0f, right, height.toFloat(), pressedPaint)
             if (slot < FIXED_SLOT_COUNT - 1) {
                 canvas.drawRect(right - DIVIDER_WIDTH_DP * density, 0f, right, height.toFloat(), dividerPaint)
