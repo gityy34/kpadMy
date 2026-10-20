@@ -61,7 +61,7 @@ class ClipboardPanelView(
             grid,
             ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT,
-                LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
             ),
         )
         addView(
