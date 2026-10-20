@@ -113,6 +113,18 @@ class ClipboardHistoryStore(context: Context) :
     fun pin(id: Long): Boolean = updatePinState(id, true)
 
     @Synchronized
+    fun markUsed(id: Long): Boolean {
+        val updated = writableDatabase.update(
+            TABLE,
+            ContentValues().apply { put(COL_LAST_USED_AT, System.currentTimeMillis()) },
+            "$COL_ID = ?",
+            arrayOf(id.toString()),
+        ) > 0
+        if (updated) pruneRecent(writableDatabase)
+        return updated
+    }
+
+    @Synchronized
     fun unpin(id: Long): Boolean {
         val updated = updatePinState(id, false)
         if (updated) pruneRecent(writableDatabase)
