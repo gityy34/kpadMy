@@ -39,3 +39,5 @@ dependencies {
     // Phase 1 intentionally has no runtime dependencies on prediction, AI, or UI toolkits.
     testImplementation("junit:junit:4.13.2")
 }
+
+// v11 release build: Resize safe-geometry update.
