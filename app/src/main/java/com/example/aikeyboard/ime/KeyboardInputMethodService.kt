@@ -37,7 +37,9 @@ import com.example.aikeyboard.glide.GlideEngine
 import com.example.aikeyboard.glide.GlideGesture
 import com.example.aikeyboard.prediction.LocalPredictionEngine
 import com.example.aikeyboard.prediction.PredictionController
+import com.example.aikeyboard.prediction.PredictionLanguage
 import com.example.aikeyboard.prediction.SuggestionCandidate
+import com.example.aikeyboard.prediction.SuggestionKind
 import com.example.aikeyboard.prediction.SuggestionSelectionEngine
 import com.example.aikeyboard.settings.SharedPreferencesKeyboardSettings
 import com.example.aikeyboard.settings.KeyboardSettings
@@ -455,6 +457,22 @@ class KeyboardInputMethodService : InputMethodService() {
         super.onDestroy()
     }
 
+    private fun exactTypedCandidate(snapshot: CompositionSnapshot): SuggestionCandidate? {
+        val word = snapshot.currentWord
+        if (word.isEmpty()) return null
+        val language = when (keyboardState.language) {
+            KeyboardLanguage.ENGLISH -> PredictionLanguage.ENGLISH
+            KeyboardLanguage.URDU -> PredictionLanguage.URDU
+            KeyboardLanguage.ROMAN_URDU -> PredictionLanguage.ROMAN_URDU
+        }
+        return SuggestionCandidate(
+            text = word,
+            language = language,
+            score = Int.MAX_VALUE,
+            kind = SuggestionKind.TYPED,
+        )
+    }
+
     private fun requestCompositionSnapshot() {
         if (contentMode != ContentMode.KEYBOARD) return
         if (keyboardState.editorInputState.isSensitive) {
@@ -486,7 +504,7 @@ class KeyboardInputMethodService : InputMethodService() {
                         result.requestId != predictionController.latestRequestId() ||
                         current?.generation != result.snapshot.generation
                     ) return@post
-                    toolbarView?.setCandidates(result.candidates)
+                    toolbarView?.setCandidates(exactTypedCandidate(result.snapshot), result.candidates)
                 }
             }
         }
