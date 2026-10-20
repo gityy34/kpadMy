@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.aikeyboard"
         minSdk = 24
         targetSdk = 35
-        versionCode = 16
-        versionName = "1.6.0"
+        versionCode = 17
+        versionName = "1.7.0"
     }
 
     buildTypes {
@@ -40,4 +40,4 @@ dependencies {
     testImplementation("junit:junit:4.13.2")
 }
 
-// v15 release build: bounded single-line suggestion rendering and compact toolbar controls.
+// v17 Settings release: searchable categories, functional-only controls, and state synchronization.
