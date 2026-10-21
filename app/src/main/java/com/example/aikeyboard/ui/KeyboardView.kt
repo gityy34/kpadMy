@@ -223,7 +223,7 @@ class KeyboardView(
         if (image != null) {
             backgroundPaint.shader = null
             canvas.drawBitmap(image, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), backgroundPaint)
-            backgroundPaint.color = Color.argb(54, Color.BLACK)
+            backgroundPaint.color = Color.argb(54, 0, 0, 0)
             canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         } else if (backgroundPaint.shader == null) {
             canvas.drawColor(theme.backgroundColor)
