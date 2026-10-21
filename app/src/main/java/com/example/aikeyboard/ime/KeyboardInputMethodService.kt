@@ -135,6 +135,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private val settingsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             glideTypingEnabled = keyboardSettings.glideTypingEnabled()
+            keyboardView?.requestLayout()
             keyboardView?.invalidate()
             // Suggestions render inside the toolbar; invalidate it as well so font-size
             // changes are visible immediately without restarting the IME.
@@ -299,6 +300,11 @@ class KeyboardInputMethodService : InputMethodService() {
                 KeyboardSettings.fontScaleForLevel(keyboardSettings.fontSizeLevel())
             },
             showLanguageSwitch = { keyboardSettings.showLanguageSwitchKey() },
+            showNumberRow = { keyboardSettings.numberRowEnabled() },
+            longPressDelayMillis = {
+                KeyboardSettings.longPressDelayForLevel(keyboardSettings.longPressDelayLevel())
+            },
+            onLongPressAlternateSelected = ::onLongPressAlternateSelected,
         )
         keyboardView = view
         view.applyTheme(activeTheme)
@@ -570,6 +576,23 @@ class KeyboardInputMethodService : InputMethodService() {
                     }
                 }
             }
+        }
+    }
+
+    private fun onLongPressAlternateSelected(text: String) {
+        val connection = currentInputConnection ?: return
+        val beforeCursor = connection.getTextBeforeCursor(2, 0)?.toString().orEmpty()
+        if (beforeCursor.isEmpty()) return
+        val codePoint = beforeCursor.codePointBefore(beforeCursor.length)
+        val deleteLength = Character.charCount(codePoint)
+        fastHistorySnapshot = null
+        val beforeEdit = editHistory.capture(connection)
+        val committed = withInternalEdit {
+            connection.deleteSurroundingText(deleteLength, 0) && connection.commitText(text, 1)
+        }
+        if (committed) {
+            editHistory.record(beforeEdit, editHistory.capture(connection))
+            requestCompositionSnapshot()
         }
     }
 
@@ -1099,6 +1122,17 @@ class KeyboardInputMethodService : InputMethodService() {
                         else -> true
                     }
                 },
+                onAddToToolbar = { item ->
+                    val nextOrder = keyboardSettings.toolbarOrder() + item
+                    keyboardSettings.setToolbarOrder(nextOrder)
+                    toolbarView?.addToolbarItem(item)
+                    android.widget.Toast.makeText(
+                        this,
+                        "Added to toolbar",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                },
+                isToolInToolbar = { item -> keyboardSettings.toolbarOrder().contains(item) },
             )
             tools.applyTheme(activeTheme)
             toolsPanel = tools
@@ -1137,6 +1171,12 @@ class KeyboardInputMethodService : InputMethodService() {
             "settings" -> openSettings(focusSearch = false)
             "search" -> openSettings(focusSearch = true)
             "resize" -> showResize()
+            "language" -> showLanguage()
+            "themes" -> openThemeActivity()
+            "emoji" -> showEmoji()
+            "clipboard" -> showClipboard()
+            "undo" -> performUndo()
+            "redo" -> performRedo()
         }
     }
 
