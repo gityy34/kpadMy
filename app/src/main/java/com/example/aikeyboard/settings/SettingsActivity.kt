@@ -1044,7 +1044,7 @@ class SettingsActivity : Activity() {
             title = "Toolbar & Tools",
             description = "Toolbar order, fixed controls, and the in-keyboard tools panel",
             entries = listOf(
-                info("toolbar.reorder", "Toolbar customization", "Long-press a reorderable toolbar item to change its order.", "Toolbar & Tools > Reorder", "reorder toolbar"),
+                info("toolbar.reorder", "Toolbar customization", "Long-press a toolbar item to reorder it, or long-press a Tools item and choose Add to Toolbar.", "Toolbar & Tools > Reorder and add", "reorder toolbar add to toolbar customize"),
                 action("toolbar.reset", "Reset toolbar layout", "Restore the approved default toolbar order.", "Toolbar & Tools > Layout", SettingAction.RESET_TOOLBAR, "reset"),
                 info("toolbar.tools", "Tools panel", "Tools opens inside the fixed IME height and can be closed with the left X control.", "Toolbar & Tools > Tools panel", "tools panel close"),
                 info("toolbar.mic", "Microphone button", "The microphone remains fixed on the right and opens Voice inside the IME.", "Toolbar & Tools > Microphone", "mic"),
