@@ -4,6 +4,8 @@ import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.LinearGradient
+import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
 import android.text.Layout
@@ -89,13 +91,30 @@ class KeyboardToolbarView(
 
     fun applyTheme(value: KeyboardTheme) {
         theme = value
-        backgroundPaint.color = value.backgroundColor
+        updateBackgroundShader()
         pressedPaint.color = value.pressedKeyColor
         dividerPaint.color = value.borderColor
         textPaint.color = value.textColor
         iconPaint.color = value.textColor
         micButtonPaint.color = value.keyColor
         invalidate()
+    }
+
+    private fun updateBackgroundShader() {
+        backgroundPaint.color = theme.backgroundColor
+        backgroundPaint.shader = if (theme.isGradient) {
+            LinearGradient(
+                0f, 0f, width.toFloat().coerceAtLeast(1f), height.toFloat().coerceAtLeast(1f),
+                theme.gradientStart ?: theme.backgroundColor,
+                theme.gradientEnd ?: theme.backgroundColor,
+                Shader.TileMode.CLAMP,
+            )
+        } else null
+    }
+
+    override fun onSizeChanged(width: Int, height: Int, oldWidth: Int, oldHeight: Int) {
+        super.onSizeChanged(width, height, oldWidth, oldHeight)
+        updateBackgroundShader()
     }
 
     fun setCandidates(value: List<SuggestionCandidate>) {
