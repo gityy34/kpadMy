@@ -862,17 +862,20 @@ class SettingsActivity : Activity() {
         setStroke(dp(1), strokeColor)
     }
 
-    private fun themeBackground(): GradientDrawable = GradientDrawable().apply {
-        shape = GradientDrawable.RECTANGLE
+    private fun themeBackground(): GradientDrawable {
         if (activeTheme.isGradient) {
-            setColors(
+            return GradientDrawable(
+                GradientDrawable.Orientation.TOP_BOTTOM,
                 intArrayOf(
                     activeTheme.gradientStart ?: activeTheme.backgroundColor,
                     activeTheme.gradientEnd ?: activeTheme.backgroundColor,
                 ),
-                GradientDrawable.Orientation.TOP_BOTTOM,
-            )
-        } else {
+            ).apply {
+                shape = GradientDrawable.RECTANGLE
+            }
+        }
+        return GradientDrawable().apply {
+            shape = GradientDrawable.RECTANGLE
             setColor(activeTheme.backgroundColor)
         }
     }
