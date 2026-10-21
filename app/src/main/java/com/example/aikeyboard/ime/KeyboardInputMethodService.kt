@@ -97,6 +97,7 @@ class KeyboardInputMethodService : InputMethodService() {
     private var resizePanel: ResizePanelView? = null
     private var toolsPanel: ToolsPanelView? = null
     private var voiceController: VoiceController? = null
+    private var voicePanel: VoicePanelView? = null
     private var emojiPanel: EmojiPanelView? = null
     private var clipboardPanel: ClipboardPanelView? = null
     private var safeAreaView: View? = null
@@ -491,6 +492,7 @@ class KeyboardInputMethodService : InputMethodService() {
         workspaceContainer = null
         rootView = null
         resizePanel = null
+        voicePanel = null
         voiceController?.close()
         voiceController = null
         editHistory.clear()
@@ -1081,6 +1083,7 @@ class KeyboardInputMethodService : InputMethodService() {
         cancelResizePreviewUpdates()
         voiceController?.close()
         voiceController = null
+        voicePanel = null
         emojiPanel = null
         clipboardPanel?.dispose()
         clipboardPanel = null
@@ -1329,6 +1332,7 @@ class KeyboardInputMethodService : InputMethodService() {
             mainHandler.post { panel?.handle(event) }
         })
         voicePanel.applyTheme(activeTheme)
+        this@KeyboardInputMethodService.voicePanel = voicePanel
         voiceController = controller
     }
 
@@ -1586,6 +1590,10 @@ class KeyboardInputMethodService : InputMethodService() {
         activeTheme = themeStore.activeTheme()
         toolbarView?.applyTheme(activeTheme)
         keyboardView?.applyTheme(activeTheme)
+        toolsPanel?.applyTheme(activeTheme)
+        resizePanel?.applyTheme(activeTheme)
+        voicePanel?.applyTheme(activeTheme)
+        emojiPanel?.setTheme(activeTheme)
         clipboardPanel?.applyTheme(activeTheme)
         safeAreaView?.setBackgroundColor(activeTheme.backgroundColor)
     }
