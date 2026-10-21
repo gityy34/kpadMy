@@ -1,12 +1,15 @@
 package com.example.aikeyboard.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Shader
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.view.MotionEvent
@@ -77,6 +80,8 @@ class KeyboardView(
     }
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var theme = KeyboardTheme.SOLID_WHITE
+    private var backgroundBitmap: Bitmap? = null
+    private var backgroundImageKey: String? = null
     private val repeatHandler = Handler(Looper.getMainLooper())
     private val repeatRunnable = object : Runnable {
         override fun run() {
@@ -173,7 +178,11 @@ class KeyboardView(
 
     fun applyTheme(value: KeyboardTheme) {
         theme = value
-        backgroundPaint.shader = if (value.isGradient) {
+        if (backgroundImageKey != value.backgroundImageUri) {
+            backgroundImageKey = value.backgroundImageUri
+            backgroundBitmap = decodeBackground(value.backgroundImageUri)
+        }
+        backgroundPaint.shader = if (value.isGradient && backgroundBitmap == null) {
             LinearGradient(
                 0f, 0f, width.toFloat().coerceAtLeast(1f), height.toFloat().coerceAtLeast(1f),
                 value.gradientStart ?: value.backgroundColor,
@@ -210,8 +219,17 @@ class KeyboardView(
             rebuildMetrics()
         }
 
-        if (backgroundPaint.shader == null) canvas.drawColor(theme.backgroundColor)
-        else canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
+        val image = backgroundBitmap
+        if (image != null) {
+            backgroundPaint.shader = null
+            canvas.drawBitmap(image, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), backgroundPaint)
+            backgroundPaint.color = Color.argb(54, Color.BLACK)
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
+        } else if (backgroundPaint.shader == null) {
+            canvas.drawColor(theme.backgroundColor)
+        } else {
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
+        }
         drawGlideTrail(canvas)
         val shifted = state.shiftActive()
         for (rowIndex in keyboardLayout.rows.indices) {
@@ -807,6 +825,19 @@ class KeyboardView(
             }
         }
         return count
+    }
+
+    private fun decodeBackground(uriValue: String?): Bitmap? {
+        if (uriValue.isNullOrBlank()) return null
+        return runCatching {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = 2
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            context.contentResolver.openInputStream(Uri.parse(uriValue)).use { input ->
+                BitmapFactory.decodeStream(input, null, options)
+            }
+        }.getOrNull()
     }
 
     private fun drawGlideTrail(canvas: Canvas) {
