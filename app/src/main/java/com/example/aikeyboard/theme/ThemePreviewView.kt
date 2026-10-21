@@ -40,7 +40,7 @@ class ThemePreviewView(context: Context) : View(context) {
         if (image != null) {
             paint.shader = null
             canvas.drawBitmap(image, null, background, paint)
-            paint.color = Color.argb(70, Color.BLACK, Color.black, Color.black)
+            paint.color = Color.argb(70, Color.BLACK, Color.BLACK, Color.BLACK)
             canvas.drawRect(background, paint)
         } else if (theme.isGradient) {
             paint.shader = LinearGradient(
