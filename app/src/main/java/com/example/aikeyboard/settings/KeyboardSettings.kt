@@ -56,6 +56,14 @@ interface KeyboardSettings {
 
     fun setShowLanguageSwitchKey(show: Boolean) = Unit
 
+    fun numberRowEnabled(): Boolean = false
+
+    fun setNumberRowEnabled(enabled: Boolean) = Unit
+
+    fun longPressDelayLevel(): Int = DEFAULT_LONG_PRESS_DELAY_LEVEL
+
+    fun setLongPressDelayLevel(level: Int) = Unit
+
     fun clipboardHistoryEnabled(): Boolean = true
 
     fun setClipboardHistoryEnabled(enabled: Boolean) = Unit
@@ -83,7 +91,13 @@ interface KeyboardSettings {
         const val SIZE_LEVEL_COUNT = 7
         const val DEFAULT_FONT_SIZE_LEVEL = 3
         const val DEFAULT_EMOJI_SIZE_LEVEL = 3
+        const val LONG_PRESS_DELAY_LEVEL_COUNT = 4
+        const val DEFAULT_LONG_PRESS_DELAY_LEVEL = 1
+        val LONG_PRESS_DELAY_MILLIS = longArrayOf(350L, 500L, 700L, 900L)
         val DEFAULT_TOOLBAR_ORDER = listOf("settings", "search", "resize")
+        val SUPPORTED_TOOLBAR_ITEMS = listOf(
+            "settings", "search", "resize", "language", "themes", "emoji", "clipboard", "undo", "redo",
+        )
 
         val FONT_SIZE_SCALES = floatArrayOf(0.85f, 0.9f, 0.95f, 1f, 1.08f, 1.18f, 1.28f)
         val EMOJI_SIZE_SCALES = floatArrayOf(0.78f, 0.86f, 0.94f, 1f, 1.08f, 1.18f, 1.28f)
@@ -94,6 +108,9 @@ interface KeyboardSettings {
 
         fun emojiScaleForLevel(level: Int): Float =
             EMOJI_SIZE_SCALES[level.coerceIn(0, EMOJI_SIZE_SCALES.lastIndex)]
+
+        fun longPressDelayForLevel(level: Int): Long =
+            LONG_PRESS_DELAY_MILLIS[level.coerceIn(0, LONG_PRESS_DELAY_MILLIS.lastIndex)]
     }
 }
 
@@ -153,6 +170,26 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         preferences.edit().putBoolean(KEY_SHOW_LANGUAGE_SWITCH, show).apply()
     }
 
+    override fun numberRowEnabled(): Boolean =
+        preferences.getBoolean(KEY_NUMBER_ROW_ENABLED, false)
+
+    override fun setNumberRowEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_NUMBER_ROW_ENABLED, enabled).apply()
+    }
+
+    override fun longPressDelayLevel(): Int =
+        preferences.getInt(
+            KEY_LONG_PRESS_DELAY_LEVEL,
+            KeyboardSettings.DEFAULT_LONG_PRESS_DELAY_LEVEL,
+        ).coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1)
+
+    override fun setLongPressDelayLevel(level: Int) {
+        preferences.edit().putInt(
+            KEY_LONG_PRESS_DELAY_LEVEL,
+            level.coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1),
+        ).apply()
+    }
+
     override fun clipboardHistoryEnabled(): Boolean =
         preferences.getBoolean(KEY_CLIPBOARD_HISTORY_ENABLED, true)
 
@@ -204,11 +241,11 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         val stored = preferences.getString(KEY_TOOLBAR_ORDER, null)
             ?.split(',')?.filter { it.isNotBlank() }.orEmpty()
         return (stored + KeyboardSettings.DEFAULT_TOOLBAR_ORDER).distinct()
-            .filter { it in KeyboardSettings.DEFAULT_TOOLBAR_ORDER }
+            .filter { it in KeyboardSettings.SUPPORTED_TOOLBAR_ITEMS }
     }
 
     override fun setToolbarOrder(order: List<String>) {
-        val valid = order.filter { it in KeyboardSettings.DEFAULT_TOOLBAR_ORDER }.distinct()
+        val valid = order.filter { it in KeyboardSettings.SUPPORTED_TOOLBAR_ITEMS }.distinct()
         preferences.edit().putString(KEY_TOOLBAR_ORDER, valid.joinToString(",")).apply()
     }
 
@@ -225,6 +262,8 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         private const val KEY_FONT_SIZE_LEVEL = "font_size_level"
         private const val KEY_EMOJI_SIZE_LEVEL = "emoji_size_level"
         private const val KEY_SHOW_LANGUAGE_SWITCH = "show_language_switch_key"
+        private const val KEY_NUMBER_ROW_ENABLED = "number_row_enabled"
+        private const val KEY_LONG_PRESS_DELAY_LEVEL = "long_press_delay_level"
         private const val KEY_CLIPBOARD_HISTORY_ENABLED = "clipboard_history_enabled"
         private const val KEY_KEYBOARD_HEIGHT_DP = "keyboard_height_dp"
         private const val KEY_RESIZE_HEIGHT_DP = "resize_height_dp"
