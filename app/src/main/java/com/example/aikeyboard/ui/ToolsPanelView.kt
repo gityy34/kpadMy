@@ -3,7 +3,11 @@ package com.example.aikeyboard.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
+import android.view.ViewConfiguration
+import android.widget.PopupMenu
 import android.view.View
 import android.view.ViewConfiguration
 import com.example.aikeyboard.theme.KeyboardTheme
@@ -17,9 +21,19 @@ class ToolsPanelView(
     context: Context,
     private val onToolSelected: (String) -> Unit,
     private val isToolEnabled: (String) -> Boolean = { true },
+    private val onAddToToolbar: (String) -> Unit = {},
+    private val isToolInToolbar: (String) -> Boolean = { false },
 ) : View(context) {
     private val density = resources.displayMetrics.density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val handler = Handler(Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        val item = items.getOrNull(pressed)
+        if (item == null || dragging) return@Runnable
+        longPressTriggered = true
+        showToolActions(item.first)
+        invalidate()
+    }
     private val background = Paint(Paint.ANTI_ALIAS_FLAG)
     private val card = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -49,6 +63,7 @@ class ToolsPanelView(
     private var downY = 0f
     private var lastY = 0f
     private var dragging = false
+    private var longPressTriggered = false
 
     fun applyTheme(value: KeyboardTheme) {
         theme = value
@@ -140,7 +155,11 @@ class ToolsPanelView(
                 downY = event.y
                 lastY = event.y
                 dragging = false
+                longPressTriggered = false
                 pressed = indexAt(event.x, event.y)
+                if (pressed >= 0) {
+                    handler.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                }
                 invalidate()
                 return true
             }
@@ -148,6 +167,7 @@ class ToolsPanelView(
                 val delta = event.y - lastY
                 if (!dragging && abs(event.y - downY) > touchSlop) {
                     dragging = true
+                    handler.removeCallbacks(longPressRunnable)
                     pressed = -1
                 }
                 if (dragging) {
@@ -158,7 +178,8 @@ class ToolsPanelView(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                val selected = if (!dragging) {
+                handler.removeCallbacks(longPressRunnable)
+                val selected = if (!dragging && !longPressTriggered) {
                     val index = indexAt(event.x, event.y)
                     if (index == pressed && items.getOrNull(index)?.let { isToolEnabled(it.first) } == true) {
                         items.getOrNull(index)?.first
@@ -166,14 +187,17 @@ class ToolsPanelView(
                 } else null
                 pressed = -1
                 dragging = false
+                longPressTriggered = false
                 invalidate()
                 selected?.let(onToolSelected)
                 performClick()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressRunnable)
                 pressed = -1
                 dragging = false
+                longPressTriggered = false
                 invalidate()
                 return true
             }
@@ -184,6 +208,18 @@ class ToolsPanelView(
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    private fun showToolActions(key: String) {
+        val popup = PopupMenu(context, this)
+        val alreadyPresent = isToolInToolbar(key)
+        val action = popup.menu.add(if (alreadyPresent) "Already on toolbar" else "Add to Toolbar")
+        action.isEnabled = !alreadyPresent
+        popup.setOnMenuItemClickListener {
+            if (!alreadyPresent) onAddToToolbar(key)
+            true
+        }
+        popup.show()
     }
 
     private fun indexAt(x: Float, y: Float): Int {
