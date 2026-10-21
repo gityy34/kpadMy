@@ -4,6 +4,7 @@ import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
@@ -211,6 +212,8 @@ class SettingsActivity : Activity() {
         bodyScroll = ScrollView(this).apply {
             isFillViewport = true
             clipToPadding = false
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_IF_CONTENT_SCROLLS
             setPadding(0, 0, 0, dp(18))
         }
@@ -481,6 +484,14 @@ class SettingsActivity : Activity() {
                 val toggle = Switch(this).apply {
                     isChecked = readToggle(toggleKey)
                     isEnabled = enabled
+                    thumbTintList = controlTint(
+                        enabledChecked = activeTheme.accentColor,
+                        enabledUnchecked = activeTheme.textColor,
+                    )
+                    trackTintList = controlTint(
+                        enabledChecked = withAlpha(activeTheme.accentColor, 160),
+                        enabledUnchecked = withAlpha(activeTheme.textColor, 92),
+                    )
                     contentDescription = entry.title
                     setOnCheckedChangeListener { _, checked -> writeToggle(toggleKey, checked) }
                 }
@@ -600,7 +611,7 @@ class SettingsActivity : Activity() {
         }
         body.addView(valueLabel, rowParams().apply { height = dp(44) })
 
-        val seek = SeekBar(this).apply {
+        val seek = themedSeekBar().apply {
             max = KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1
             progress = currentLevel
             contentDescription = "Long-press delay"
@@ -709,7 +720,7 @@ class SettingsActivity : Activity() {
             LinearLayout.LayoutParams.MATCH_PARENT,
             dp(48),
         ))
-        val seek = SeekBar(this).apply {
+        val seek = themedSeekBar().apply {
             max = SIZE_LEVEL_COUNT - 1
             progress = initialLevel.coerceIn(0, max)
             contentDescription = title
@@ -740,7 +751,7 @@ class SettingsActivity : Activity() {
     }
 
     private fun confirmClear() {
-        AlertDialog.Builder(this)
+        themedAlertDialog()
             .setTitle(getString(R.string.clear_personal_data))
             .setMessage(getString(R.string.clear_personal_data_confirmation))
             .setNegativeButton(android.R.string.cancel, null)
@@ -769,7 +780,7 @@ class SettingsActivity : Activity() {
                 "All clipboard data cleared",
             )
         }
-        AlertDialog.Builder(this)
+        themedAlertDialog()
             .setTitle(title)
             .setMessage(message)
             .setNegativeButton(android.R.string.cancel, null)
@@ -797,7 +808,7 @@ class SettingsActivity : Activity() {
 
     private fun applyThemeToScreen() {
         activeTheme = themeStore.activeTheme()
-        screenRoot.setBackgroundColor(activeTheme.backgroundColor)
+        screenRoot.background = themeBackground()
         headerTitle.setTextColor(activeTheme.textColor)
         headerBack.iconColor = activeTheme.textColor
         headerBack.circleColor = activeTheme.keyColor
@@ -809,7 +820,7 @@ class SettingsActivity : Activity() {
             cornerDp = 15,
             strokeColor = if (search.hasFocus()) activeTheme.accentColor else activeTheme.borderColor,
         )
-        body.setBackgroundColor(activeTheme.backgroundColor)
+        body.background = null
         updateSystemBars()
     }
 
@@ -850,6 +861,59 @@ class SettingsActivity : Activity() {
         setColor(fillColor)
         setStroke(dp(1), strokeColor)
     }
+
+    private fun themeBackground(): GradientDrawable = GradientDrawable().apply {
+        shape = GradientDrawable.RECTANGLE
+        if (activeTheme.isGradient) {
+            setColors(
+                intArrayOf(
+                    activeTheme.gradientStart ?: activeTheme.backgroundColor,
+                    activeTheme.gradientEnd ?: activeTheme.backgroundColor,
+                ),
+                GradientDrawable.Orientation.TOP_BOTTOM,
+            )
+        } else {
+            setColor(activeTheme.backgroundColor)
+        }
+    }
+
+    private fun themedSeekBar(): SeekBar = SeekBar(this).apply {
+        progressTintList = ColorStateList.valueOf(activeTheme.accentColor)
+        progressBackgroundTintList = ColorStateList.valueOf(activeTheme.borderColor)
+        thumbTintList = ColorStateList.valueOf(activeTheme.accentColor)
+    }
+
+    private fun controlTint(
+        enabledChecked: Int,
+        enabledUnchecked: Int,
+    ): ColorStateList = ColorStateList(
+        arrayOf(
+            intArrayOf(-android.R.attr.state_enabled),
+            intArrayOf(android.R.attr.state_checked),
+            intArrayOf(),
+        ),
+        intArrayOf(
+            withAlpha(mutedColor(), 120),
+            enabledChecked,
+            enabledUnchecked,
+        ),
+    )
+
+    private fun withAlpha(color: Int, alpha: Int): Int = Color.argb(
+        alpha.coerceIn(0, 255),
+        Color.red(color),
+        Color.green(color),
+        Color.blue(color),
+    )
+
+    private fun themedAlertDialog(): AlertDialog.Builder = AlertDialog.Builder(
+        this,
+        if (isLightColor(activeTheme.backgroundColor)) {
+            android.R.style.Theme_Material_Light_Dialog_Alert
+        } else {
+            android.R.style.Theme_Material_Dialog_Alert
+        },
+    )
 
     private fun label(value: String, size: Float, color: Int): TextView = TextView(this).apply {
         text = value
@@ -946,12 +1010,12 @@ class SettingsActivity : Activity() {
                 toggle("typing.number_row", "Number Row", "Show 1–0 above the alphabet rows without changing the bottom row.", "Preferences > Layout", ToggleKey.NUMBER_ROW, "number row digits 1234567890 top numbers"),
                 toggle("typing.alternate_characters", "Long-press alternate characters", "Show symbol/alternate-character popups when an alphabet key is held.", "Preferences > Key press behavior", ToggleKey.ALTERNATE_CHARACTERS, "long press alternate characters popup symbols enable disable"),
                 action("typing.long_press", "Long-press delay", "Choose Fast, Normal, Slow, or Extra Slow timing for alternate-character popups.", "Preferences > Key press behavior", SettingAction.OPEN_KEY_BEHAVIOR_CONTROLS, "long press delay alternate popup milliseconds fast normal slow"),
-                info("typing.fast", "Fast key input", "Normal key commits stay independent from background work.", "Preferences > Key press behavior", "key press behavior latency"),
+                info("typing.fast", "Typing responsiveness", "Keys respond immediately during normal typing.", "Preferences > Key press behavior", "key press behavior latency"),
                 info("typing.shift", "Shift and Caps Lock", "One-shot Shift and Caps Lock are supported.", "Preferences > Shift", "shift caps lock"),
                 info("typing.symbols", "Numbers and symbols", "The keyboard includes punctuation and symbol layouts.", "Preferences > Symbols", "numbers symbols punctuation"),
                 info("typing.space", "Auto space", "Normal Space commits immediately; suggestion acceptance uses one safe space.", "Preferences > Space", "auto space"),
                 info("typing.repeat", "Backspace repeat", "Hold Backspace for controlled repeated deletion.", "Preferences > Backspace", "key repeat backspace"),
-                unavailable("typing.haptics", "Haptic feedback", "Device haptics are not configurable in this build.", "Preferences > Feedback", "vibration sound key press"),
+                unavailable("typing.haptics", "Haptic feedback", "Haptic feedback is managed by the device and is not configurable here.", "Preferences > Feedback", "vibration sound key press"),
             ),
         ),
         SettingsCategory(
@@ -1071,9 +1135,9 @@ class SettingsActivity : Activity() {
             title = "AI Tools",
             description = "Reserved extension points for future writing tools",
             entries = listOf(
-                unavailable("ai.tools", "AI writing tools", "Grammar, rewrite, tone, and assistant tools are not connected in this build.", "AI Tools > Writing", "ai grammar rewrite humanise tone"),
+                unavailable("ai.tools", "AI writing tools", "AI writing tools are unavailable until an approved provider is connected.", "AI Tools > Writing", "ai grammar rewrite humanise tone"),
                 unavailable("ai.provider", "AI provider and model", "Provider and model selection will appear when an approved provider is connected.", "AI Tools > Provider", "provider model ChatGPT connection"),
-                unavailable("ai.privacy", "AI data behavior", "No AI network request is made by the current keyboard build.", "AI Tools > Privacy", "network api privacy"),
+                unavailable("ai.privacy", "AI data behavior", "AI writing is not connected; normal typing remains on-device.", "AI Tools > Privacy", "network api privacy"),
             ),
         ),
         SettingsCategory(
@@ -1095,9 +1159,9 @@ class SettingsActivity : Activity() {
             description = "System accessibility support and readable keyboard behavior",
             entries = listOf(
                 info("accessibility.talkback", "TalkBack support", "Keyboard controls expose descriptive actions where supported; TalkBack is managed by Android.", "Accessibility > TalkBack", "talkback screen reader content description"),
-                unavailable("accessibility.motion", "Reduced motion", "A dedicated reduced-motion preference is not implemented in this build.", "Accessibility > Motion", "reduced motion animation"),
-                unavailable("accessibility.labels", "Larger labels", "Use Font & Emoji Size for supported keyboard text; a separate label override is not implemented.", "Accessibility > Text", "larger labels text size"),
-                unavailable("accessibility.contrast", "High contrast", "No separate high-contrast override is implemented; theme foreground/background contrast is used.", "Accessibility > Contrast", "high contrast"),
+                unavailable("accessibility.motion", "Reduced motion", "Animation controls are not available separately.", "Accessibility > Motion", "reduced motion animation"),
+                unavailable("accessibility.labels", "Larger labels", "Use Font & Emoji Size to adjust supported keyboard text.", "Accessibility > Text", "larger labels text size"),
+                unavailable("accessibility.contrast", "High contrast", "Theme contrast is applied automatically.", "Accessibility > Contrast", "high contrast"),
             ),
         ),
         SettingsCategory(
@@ -1108,7 +1172,7 @@ class SettingsActivity : Activity() {
             entries = listOf(
                 info("about.version", "AI Keyboard", "Version ${appVersion()}.", "About > Version", "version build"),
                 info("about.build", "Build number", "Installed build ${appBuild()}.", "About > Build", "build number version code"),
-                info("about.engine", "Keyboard engine", "InputMethodService with modular typing, composition, prediction, and UI boundaries.", "About > Engine", "ime input engine"),
+                info("about.engine", "Keyboard technology", "Typing, languages, suggestions, and keyboard tools are available here.", "About > Engine", "ime input engine"),
             ),
         ),
         SettingsCategory(
