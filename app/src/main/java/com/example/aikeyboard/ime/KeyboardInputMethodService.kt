@@ -304,6 +304,7 @@ class KeyboardInputMethodService : InputMethodService() {
             longPressDelayMillis = {
                 KeyboardSettings.longPressDelayForLevel(keyboardSettings.longPressDelayLevel())
             },
+            longPressAlternatesEnabled = { keyboardSettings.alternateCharactersEnabled() },
             onLongPressAlternateSelected = ::onLongPressAlternateSelected,
         )
         keyboardView = view
