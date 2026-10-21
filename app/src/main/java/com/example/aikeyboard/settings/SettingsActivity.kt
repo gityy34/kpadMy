@@ -242,6 +242,7 @@ class SettingsActivity : Activity() {
         when (categoryId) {
             null -> renderHome()
             APPEARANCE_CONTROLS_ID -> renderAppearanceControls()
+            KEY_BEHAVIOR_CONTROLS_ID -> renderKeyBehaviorControls()
             else -> renderCategory(categoryId)
         }
     }
@@ -542,6 +543,7 @@ class SettingsActivity : Activity() {
         when (action) {
             SettingAction.OPEN_THEMES -> startActivity(Intent(this, ThemeActivity::class.java))
             SettingAction.OPEN_APPEARANCE_CONTROLS -> renderAppearanceControls()
+            SettingAction.OPEN_KEY_BEHAVIOR_CONTROLS -> renderKeyBehaviorControls()
             SettingAction.RESET_TOOLBAR -> {
                 settings.setToolbarOrder(KeyboardSettings.DEFAULT_TOOLBAR_ORDER)
                 Toast.makeText(this, "Toolbar layout reset", Toast.LENGTH_SHORT).show()
@@ -561,6 +563,7 @@ class SettingsActivity : Activity() {
         ToggleKey.GLIDE_TYPING -> settings.glideTypingEnabled()
         ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.showLanguageSwitchKey()
         ToggleKey.CLIPBOARD_HISTORY -> settings.clipboardHistoryEnabled()
+        ToggleKey.NUMBER_ROW -> settings.numberRowEnabled()
     }
 
     private fun writeToggle(toggle: ToggleKey, value: Boolean) {
@@ -569,8 +572,75 @@ class SettingsActivity : Activity() {
             ToggleKey.GLIDE_TYPING -> settings.setGlideTypingEnabled(value)
             ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.setShowLanguageSwitchKey(value)
             ToggleKey.CLIPBOARD_HISTORY -> settings.setClipboardHistoryEnabled(value)
+            ToggleKey.NUMBER_ROW -> settings.setNumberRowEnabled(value)
         }
         notifySettingsChanged()
+    }
+
+    private fun renderKeyBehaviorControls() {
+        currentCategoryId = KEY_BEHAVIOR_CONTROLS_ID
+        renderedRows.clear()
+        applyThemeToScreen()
+        body.removeAllViews()
+        addSectionHeader(
+            "Key press behavior",
+            "Long-press alternatives remain separate from the fast normal tap path.",
+        )
+
+        val currentLevel = settings.longPressDelayLevel().coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1)
+        val valueLabel = label(
+            "${KeyboardSettings.longPressDelayForLevel(currentLevel)} ms",
+            18f,
+            activeTheme.textColor,
+        ).apply {
+            gravity = Gravity.CENTER
+            contentDescription = "Long-press delay value"
+        }
+        body.addView(valueLabel, rowParams().apply { height = dp(44) })
+
+        val seek = SeekBar(this).apply {
+            max = KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1
+            progress = currentLevel
+            contentDescription = "Long-press delay"
+        }
+        seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
+                val safeLevel = value.coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1)
+                valueLabel.text = "${KeyboardSettings.longPressDelayForLevel(safeLevel)} ms"
+                if (fromUser) {
+                    settings.setLongPressDelayLevel(safeLevel)
+                    notifySettingsChanged()
+                }
+            }
+
+            override fun onStartTrackingTouch(bar: SeekBar?) = Unit
+            override fun onStopTrackingTouch(bar: SeekBar?) = Unit
+        })
+        body.addView(seek, rowParams().apply {
+            setMargins(dp(8), 0, dp(8), dp(8))
+        })
+        body.addView(
+            label(
+                "Fast 350 ms   •   Normal 500 ms   •   Slow 700 ms   •   Extra slow 900 ms",
+                12f,
+                mutedColor(),
+            ).apply {
+                setPadding(dp(8), 0, dp(8), dp(12))
+                contentDescription = "Long-press presets: fast 350 milliseconds, normal 500 milliseconds, slow 700 milliseconds, extra slow 900 milliseconds"
+            },
+            rowParams(),
+        )
+        body.addView(
+            label(
+                "Alphabet keys show relevant alternate characters after the selected delay. A normal tap still commits immediately.",
+                13f,
+                mutedColor(),
+            ).apply {
+                setPadding(dp(8), dp(8), dp(8), dp(8))
+            },
+            rowParams(),
+        )
+        bodyScroll.scrollTo(0, 0)
     }
 
     private fun renderAppearanceControls() {
@@ -871,6 +941,8 @@ class SettingsActivity : Activity() {
             description = "General keyboard behavior, layout preferences, and appearance controls",
             entries = listOf(
                 action("typing.appearance", "Font & Emoji Size", "Open the seven-level live controls for keyboard text and emoji.", "Preferences > Appearance", SettingAction.OPEN_APPEARANCE_CONTROLS, "font size emoji size appearance preview"),
+                toggle("typing.number_row", "Number Row", "Show 1–0 above the alphabet rows without changing the bottom row.", "Preferences > Layout", ToggleKey.NUMBER_ROW, "number row digits 1234567890 top numbers"),
+                action("typing.long_press", "Long-press delay", "Choose Fast, Normal, Slow, or Extra Slow timing for alternate-character popups.", "Preferences > Key press behavior", SettingAction.OPEN_KEY_BEHAVIOR_CONTROLS, "long press delay alternate popup milliseconds fast normal slow"),
                 info("typing.fast", "Fast key input", "Normal key commits stay independent from background work.", "Preferences > Key press behavior", "key press behavior latency"),
                 info("typing.shift", "Shift and Caps Lock", "One-shot Shift and Caps Lock are supported.", "Preferences > Shift", "shift caps lock"),
                 info("typing.symbols", "Numbers and symbols", "The keyboard includes punctuation and symbol layouts.", "Preferences > Symbols", "numbers symbols punctuation"),
@@ -1079,6 +1151,7 @@ class SettingsActivity : Activity() {
     companion object {
         const val EXTRA_FOCUS_SEARCH = "focus_settings_search"
         const val APPEARANCE_CONTROLS_ID = "appearance_controls"
+        const val KEY_BEHAVIOR_CONTROLS_ID = "key_behavior_controls"
         const val SIZE_LEVEL_COUNT = 7
     }
 
@@ -1104,11 +1177,12 @@ class SettingsActivity : Activity() {
     )
 
     private enum class EntryType { INFO, ACTION, TOGGLE, PLACEHOLDER }
-    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH, CLIPBOARD_HISTORY }
+    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH, CLIPBOARD_HISTORY, NUMBER_ROW }
     private enum class ClipboardClearScope { RECENT, PINNED, ALL }
     private enum class SettingAction {
         OPEN_THEMES,
         OPEN_APPEARANCE_CONTROLS,
+        OPEN_KEY_BEHAVIOR_CONTROLS,
         RESET_TOOLBAR,
         CLEAR_PERSONAL_DATA,
         CLEAR_CLIPBOARD_RECENT,
