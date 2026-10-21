@@ -113,6 +113,16 @@ class KeyboardInputMethodService : InputMethodService() {
     // Local history shadow used by rapid text commits; it avoids InputConnection reads per key.
     private var fastHistorySnapshot: KeyboardEditHistory.EditorTextSnapshot? = null
     private val mainHandler = Handler(Looper.getMainLooper())
+    private var resizePreviewPostScheduled = false
+    private var pendingResizePreview: ResizeConfiguration? = null
+    private val resizePreviewRunnable = Runnable {
+        resizePreviewPostScheduled = false
+        val value = pendingResizePreview ?: return@Runnable
+        pendingResizePreview = null
+        if (contentMode == ContentMode.RESIZE) {
+            applyResizePreview(value)
+        }
+    }
     private val clipboardCaptureExecutor = Executors.newSingleThreadExecutor()
     private val clipboardListener = ClipboardManager.OnPrimaryClipChangedListener {
         capturePrimaryClipboard()
@@ -458,6 +468,9 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(resizePreviewRunnable)
+        pendingResizePreview = null
+        resizePreviewPostScheduled = false
         keyboardView?.cancelPendingInput()
         toolbarView?.cancelPendingInput()
         clipboardPanel?.dispose()
@@ -1041,6 +1054,7 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun setKeyboardContent() {
+        cancelResizePreviewUpdates()
         voiceController?.close()
         voiceController = null
         emojiPanel = null
@@ -1304,9 +1318,18 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun showResize() {
+        // Repeated taps on the Resize action must not create another overlay on top of the
+        // active one. A single panel owns the complete Resize gesture state.
+        if (contentMode == ContentMode.RESIZE) return
+        pendingResizePreview = null
+        resizePreviewPostScheduled = false
+        resizePanel?.let { existing -> workspaceContainer?.removeView(existing) }
+        resizePanel = null
+
         contentMode = ContentMode.RESIZE
         clearSuggestions()
         toolbarView?.showToolbarActions()
+        toolbarView?.setClosePanelMode(true)
         resizeConfigurationBefore = keyboardSettings.resizeConfiguration(currentOrientation())
         resizeConfigurationWorking = resizeConfigurationBefore
         var draftConfiguration = resizeConfigurationBefore
@@ -1324,9 +1347,15 @@ class KeyboardInputMethodService : InputMethodService() {
             context = this,
             initialConfiguration = draftConfiguration,
             onConfigurationChanged = { value ->
-                draftConfiguration = value
-                resizeConfigurationWorking = value
-                applyResizePreview(value)
+                draftConfiguration = value.clamped()
+                resizeConfigurationWorking = draftConfiguration
+                // Queue the window/layout preview after the current MotionEvent. This prevents
+                // an IME height request from re-entering ResizePanelView touch dispatch.
+                pendingResizePreview = draftConfiguration
+                if (!resizePreviewPostScheduled) {
+                    resizePreviewPostScheduled = true
+                    mainHandler.post(resizePreviewRunnable)
+                }
             },
             onDone = { value ->
                 draftConfiguration = value.clamped()
@@ -1342,8 +1371,9 @@ class KeyboardInputMethodService : InputMethodService() {
                 }
             },
             onCancel = {
-                // Cancel is also deferred so a BACK/ACTION_CANCEL event cannot detach the IME
-                // while ResizePanelView is still dispatching it.
+                // Cancel is also deferred so a BACK event cannot detach the IME while
+                // ResizePanelView is still dispatching it. ACTION_CANCEL from a relayout is
+                // intentionally handled as a gesture-only cancel inside ResizePanelView.
                 mainHandler.post {
                     if (contentMode == ContentMode.RESIZE) setKeyboardContent()
                 }
@@ -1351,8 +1381,14 @@ class KeyboardInputMethodService : InputMethodService() {
             onReset = {
                 draftConfiguration = ResizeConfiguration()
                 resizeConfigurationWorking = draftConfiguration
-                applyResizePreview(draftConfiguration)
                 panel.setConfiguration(draftConfiguration)
+                // Do not resize the IME synchronously from ACTION_UP. The panel remains active
+                // and the preview is applied on the next main-loop turn.
+                pendingResizePreview = draftConfiguration
+                if (!resizePreviewPostScheduled) {
+                    resizePreviewPostScheduled = true
+                    mainHandler.post(resizePreviewRunnable)
+                }
             },
             visualKeyBlockHeightDp = { heightDp ->
                 keyboardView?.visualKeyBlockHeightDp(heightDp)
@@ -1377,7 +1413,14 @@ class KeyboardInputMethodService : InputMethodService() {
         keyboardView?.let { view ->
             updateKeyboardGeometry(view, value)
         }
-        resizePanel?.setConfiguration(value)
+        // ResizePanelView already owns and draws the live draft configuration. Avoid writing
+        // back into that view while it is dispatching the same MotionEvent.
+    }
+
+    private fun cancelResizePreviewUpdates() {
+        mainHandler.removeCallbacks(resizePreviewRunnable)
+        pendingResizePreview = null
+        resizePreviewPostScheduled = false
     }
 
     private fun updateKeyboardGeometry(
