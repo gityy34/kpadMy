@@ -9,7 +9,6 @@ import android.view.MotionEvent
 import android.view.ViewConfiguration
 import android.widget.PopupMenu
 import android.view.View
-import android.view.ViewConfiguration
 import com.example.aikeyboard.theme.KeyboardTheme
 import kotlin.math.abs
 
@@ -213,10 +212,17 @@ class ToolsPanelView(
     private fun showToolActions(key: String) {
         val popup = PopupMenu(context, this)
         val alreadyPresent = isToolInToolbar(key)
-        val action = popup.menu.add(if (alreadyPresent) "Already on toolbar" else "Add to Toolbar")
-        action.isEnabled = !alreadyPresent
+        val supported = key in TOOLBAR_SUPPORTED_ITEMS
+        val action = popup.menu.add(
+            when {
+                !supported -> "Unavailable on toolbar"
+                alreadyPresent -> "Already on toolbar"
+                else -> "Add to Toolbar"
+            },
+        )
+        action.isEnabled = supported && !alreadyPresent
         popup.setOnMenuItemClickListener {
-            if (!alreadyPresent) onAddToToolbar(key)
+            if (supported && !alreadyPresent) onAddToToolbar(key)
             true
         }
         popup.show()
@@ -249,5 +255,11 @@ class ToolsPanelView(
     private fun contentHeight(cardHeight: Float, gap: Float): Float {
         val rows = (items.size + 1) / 2
         return gap * 2f + rows * cardHeight + (rows - 1) * gap
+    }
+
+    private companion object {
+        val TOOLBAR_SUPPORTED_ITEMS = setOf(
+            "settings", "search", "resize", "language", "themes", "emoji", "clipboard", "undo", "redo",
+        )
     }
 }
