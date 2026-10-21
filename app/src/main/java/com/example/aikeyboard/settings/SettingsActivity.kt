@@ -564,6 +564,7 @@ class SettingsActivity : Activity() {
         ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.showLanguageSwitchKey()
         ToggleKey.CLIPBOARD_HISTORY -> settings.clipboardHistoryEnabled()
         ToggleKey.NUMBER_ROW -> settings.numberRowEnabled()
+        ToggleKey.ALTERNATE_CHARACTERS -> settings.alternateCharactersEnabled()
     }
 
     private fun writeToggle(toggle: ToggleKey, value: Boolean) {
@@ -573,6 +574,7 @@ class SettingsActivity : Activity() {
             ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.setShowLanguageSwitchKey(value)
             ToggleKey.CLIPBOARD_HISTORY -> settings.setClipboardHistoryEnabled(value)
             ToggleKey.NUMBER_ROW -> settings.setNumberRowEnabled(value)
+            ToggleKey.ALTERNATE_CHARACTERS -> settings.setAlternateCharactersEnabled(value)
         }
         notifySettingsChanged()
     }
@@ -942,6 +944,7 @@ class SettingsActivity : Activity() {
             entries = listOf(
                 action("typing.appearance", "Font & Emoji Size", "Open the seven-level live controls for keyboard text and emoji.", "Preferences > Appearance", SettingAction.OPEN_APPEARANCE_CONTROLS, "font size emoji size appearance preview"),
                 toggle("typing.number_row", "Number Row", "Show 1–0 above the alphabet rows without changing the bottom row.", "Preferences > Layout", ToggleKey.NUMBER_ROW, "number row digits 1234567890 top numbers"),
+                toggle("typing.alternate_characters", "Long-press alternate characters", "Show symbol/alternate-character popups when an alphabet key is held.", "Preferences > Key press behavior", ToggleKey.ALTERNATE_CHARACTERS, "long press alternate characters popup symbols enable disable"),
                 action("typing.long_press", "Long-press delay", "Choose Fast, Normal, Slow, or Extra Slow timing for alternate-character popups.", "Preferences > Key press behavior", SettingAction.OPEN_KEY_BEHAVIOR_CONTROLS, "long press delay alternate popup milliseconds fast normal slow"),
                 info("typing.fast", "Fast key input", "Normal key commits stay independent from background work.", "Preferences > Key press behavior", "key press behavior latency"),
                 info("typing.shift", "Shift and Caps Lock", "One-shot Shift and Caps Lock are supported.", "Preferences > Shift", "shift caps lock"),
@@ -1177,7 +1180,7 @@ class SettingsActivity : Activity() {
     )
 
     private enum class EntryType { INFO, ACTION, TOGGLE, PLACEHOLDER }
-    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH, CLIPBOARD_HISTORY, NUMBER_ROW }
+    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH, CLIPBOARD_HISTORY, NUMBER_ROW, ALTERNATE_CHARACTERS }
     private enum class ClipboardClearScope { RECENT, PINNED, ALL }
     private enum class SettingAction {
         OPEN_THEMES,
