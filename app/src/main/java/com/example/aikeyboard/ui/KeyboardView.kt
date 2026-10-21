@@ -51,6 +51,7 @@ class KeyboardView(
     private val showLanguageSwitch: () -> Boolean = { false },
     private val showNumberRow: () -> Boolean = { false },
     private val longPressDelayMillis: () -> Long = { DEFAULT_LONG_PRESS_DELAY_MS },
+    private val longPressAlternatesEnabled: () -> Boolean = { true },
     private val onLongPressAlternateSelected: (String) -> Unit = {},
 ) : View(context) {
 
@@ -113,6 +114,7 @@ class KeyboardView(
         if (pointerId == TouchTracker.INVALID_POINTER_ID ||
             key?.type != KeyType.CHARACTER ||
             key.alternateTexts.isEmpty() ||
+            !longPressAlternatesEnabled() ||
             !touchTracker.owns(pointerId)
         ) return@Runnable
 
@@ -278,7 +280,10 @@ class KeyboardView(
                 val hit = findKey(event.x, event.y)
                 touchTracker.start(event.getPointerId(0), hit)
                 if (hit != null) {
-                    if (hit.type == KeyType.CHARACTER && hit.alternateTexts.isNotEmpty()) {
+                    if (longPressAlternatesEnabled() &&
+                        hit.type == KeyType.CHARACTER &&
+                        hit.alternateTexts.isNotEmpty()
+                    ) {
                         repeatHandler.postDelayed(
                             alternateLongPressRunnable,
                             longPressDelayMillis().coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS),
