@@ -5,6 +5,7 @@ import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Shader
 import android.os.Handler
 import android.os.Looper
@@ -13,6 +14,7 @@ import android.view.View
 import com.example.aikeyboard.core.KeySpec
 import com.example.aikeyboard.core.KeyType
 import com.example.aikeyboard.core.KeyboardLayout
+import com.example.aikeyboard.core.KeyboardMode
 import com.example.aikeyboard.core.KeyboardLayoutProvider
 import com.example.aikeyboard.core.KeyboardLanguage
 import com.example.aikeyboard.core.KeyboardState
@@ -47,6 +49,9 @@ class KeyboardView(
     private val onBackspaceSwipeCancelled: () -> Unit = {},
     private val fontScale: () -> Float = { 1f },
     private val showLanguageSwitch: () -> Boolean = { false },
+    private val showNumberRow: () -> Boolean = { false },
+    private val longPressDelayMillis: () -> Long = { DEFAULT_LONG_PRESS_DELAY_MS },
+    private val onLongPressAlternateSelected: (String) -> Unit = {},
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -102,9 +107,36 @@ class KeyboardView(
         onSpaceLongPressed()
     }
 
+    private val alternateLongPressRunnable = Runnable {
+        val key = touchTracker.pressedKey
+        val pointerId = touchTracker.activePointerId
+        if (pointerId == TouchTracker.INVALID_POINTER_ID ||
+            key?.type != KeyType.CHARACTER ||
+            key.alternateTexts.isEmpty() ||
+            !touchTracker.owns(pointerId)
+        ) return@Runnable
+
+        alternatePopupVisible = true
+        alternatePopupOptions = key.alternateTexts
+        alternatePopupSelected = -1
+        val metrics = rowMetrics.getOrNull(pressedRow)
+        if (metrics != null && pressedColumn in metrics.left.indices) {
+            alternatePopupAnchorX = (metrics.left[pressedColumn] + metrics.right[pressedColumn]) / 2f
+            alternatePopupAnchorY = metrics.top
+        }
+        invalidate()
+    }
+
     private var keyboardLayout: KeyboardLayout = layoutProvider.layoutFor(state.language, state.mode)
     private var lastBaseLayout: KeyboardLayout = keyboardLayout
     private var lastLanguageSwitchVisible = false
+    private var lastNumberRowVisible = false
+    private var alternatePopupVisible = false
+    private var alternatePopupOptions: List<String> = emptyList()
+    private var alternatePopupSelected = -1
+    private var alternatePopupAnchorX = 0f
+    private var alternatePopupAnchorY = 0f
+    private val alternatePopupRect = RectF()
     private var rowMetrics: Array<RowMetrics> = emptyArray()
     private var pressedRow = -1
     private var pressedColumn = -1
@@ -234,6 +266,7 @@ class KeyboardView(
                 canvas.drawText(label, (left + right - textWidth) / 2f, baseline, textPaint)
             }
         }
+        drawAlternatePopup(canvas)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -245,6 +278,12 @@ class KeyboardView(
                 val hit = findKey(event.x, event.y)
                 touchTracker.start(event.getPointerId(0), hit)
                 if (hit != null) {
+                    if (hit.type == KeyType.CHARACTER && hit.alternateTexts.isNotEmpty()) {
+                        repeatHandler.postDelayed(
+                            alternateLongPressRunnable,
+                            longPressDelayMillis().coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS),
+                        )
+                    }
                     if (glideEnabled() && isGlideKey(hit)) {
                         glideEligible = true
                         glideProvisionalText = hit.textFor(state.shiftActive())
@@ -296,6 +335,9 @@ class KeyboardView(
                     event.findPointerIndex(touchTracker.activePointerId) < 0
                 ) {
                     clearPressedState()
+                } else if (alternatePopupVisible) {
+                    val index = event.findPointerIndex(touchTracker.activePointerId)
+                    if (index >= 0) updateAlternatePopupSelection(event.getX(index), event.getY(index))
                 } else if (spaceCommitted || spaceCursorActive) {
                     val index = event.findPointerIndex(touchTracker.activePointerId)
                     if (index >= 0) updateSpaceCursor(event.getX(index), event.getY(index))
@@ -319,6 +361,13 @@ class KeyboardView(
 
             MotionEvent.ACTION_UP -> {
                 if (touchTracker.owns(event.getPointerId(event.actionIndex))) {
+                    if (alternatePopupVisible) {
+                        val selected = alternatePopupOptions.getOrNull(alternatePopupSelected)
+                        if (!selected.isNullOrEmpty()) onLongPressAlternateSelected(selected)
+                        clearPressedState()
+                        performClick()
+                        return true
+                    }
                     if (glideActive) notifyGlideCompleted()
                     val pressedKey = touchTracker.pressedKey
                     if (backspaceSwipeActive) {
@@ -362,7 +411,8 @@ class KeyboardView(
      * contain additional blank space, but keys are never stretched to consume it.
      */
     fun visualKeyBlockHeightDp(availableHeightDp: Int): Int {
-        val normalRows = (keyboardLayout.rows.size - 1).coerceAtLeast(1)
+        val activeLayout = resolvedLayout()
+        val normalRows = (activeLayout.rows.size - 1).coerceAtLeast(1)
         val gap = ROW_GAP_DP * normalRows
         val (normalHeight, bottomHeight) = rowHeightsDp(availableHeightDp.toFloat(), normalRows)
         return (normalHeight * normalRows + gap + bottomHeight).roundToInt()
@@ -466,6 +516,7 @@ class KeyboardView(
             .coerceIn(MIN_LABEL_SCALE, MAX_LABEL_SCALE)
         val baseTextSize = when (key.type) {
             KeyType.SPACE -> SPACE_LABEL_TEXT_SIZE_SP
+            KeyType.SHIFT -> SHIFT_ICON_TEXT_SIZE_SP
             KeyType.MODE_SWITCH -> MODE_LABEL_TEXT_SIZE_SP
             KeyType.CHARACTER -> MAIN_KEY_TEXT_SIZE_SP
             else -> ACTION_TEXT_SIZE_SP
@@ -592,6 +643,60 @@ class KeyboardView(
     }
 
     /** Compact globe vector; its bounds are inset from the key rectangle by construction. */
+    private fun updateAlternatePopupSelection(x: Float, y: Float) {
+        if (!alternatePopupRect.contains(x, y)) {
+            alternatePopupSelected = -1
+            invalidate()
+            return
+        }
+        val cellWidth = alternatePopupRect.width() / alternatePopupOptions.size.coerceAtLeast(1)
+        alternatePopupSelected = ((x - alternatePopupRect.left) / cellWidth)
+            .toInt()
+            .coerceIn(0, alternatePopupOptions.lastIndex)
+        invalidate()
+    }
+
+    private fun drawAlternatePopup(canvas: Canvas) {
+        if (!alternatePopupVisible || alternatePopupOptions.isEmpty()) return
+        val cellWidth = POPUP_CELL_WIDTH_DP * density
+        val popupHeight = POPUP_HEIGHT_DP * density
+        val popupWidth = cellWidth * alternatePopupOptions.size
+        val left = (alternatePopupAnchorX - popupWidth / 2f)
+            .coerceIn(0f, (width - popupWidth).coerceAtLeast(0f))
+        val top = (alternatePopupAnchorY - popupHeight - POPUP_GAP_DP * density)
+            .coerceAtLeast(0f)
+        alternatePopupRect.set(left, top, left + popupWidth, top + popupHeight)
+        keyPaint.style = Paint.Style.FILL
+        keyPaint.color = theme.keyColor
+        canvas.drawRoundRect(alternatePopupRect, cornerRadius * 1.5f, cornerRadius * 1.5f, keyPaint)
+        keyPaint.style = Paint.Style.STROKE
+        keyPaint.strokeWidth = density
+        keyPaint.color = theme.borderColor
+        canvas.drawRoundRect(alternatePopupRect, cornerRadius * 1.5f, cornerRadius * 1.5f, keyPaint)
+        keyPaint.style = Paint.Style.FILL
+        alternatePopupOptions.forEachIndexed { index, option ->
+            val cellLeft = left + index * cellWidth
+            if (index == alternatePopupSelected) {
+                keyPaint.color = theme.pressedKeyColor
+                canvas.drawRoundRect(
+                    cellLeft + density,
+                    top + density,
+                    cellLeft + cellWidth - density,
+                    top + popupHeight - density,
+                    cornerRadius,
+                    cornerRadius,
+                    keyPaint,
+                )
+            }
+            textPaint.color = theme.textColor
+            textPaint.textSize = POPUP_TEXT_SIZE_SP * scaledDensity
+            textPaint.getFontMetrics(fontMetrics)
+            val baseline = top + (popupHeight - fontMetrics.ascent - fontMetrics.descent) / 2f
+            val textWidth = textPaint.measureText(option)
+            canvas.drawText(option, cellLeft + (cellWidth - textWidth) / 2f, baseline, textPaint)
+        }
+    }
+
     private fun drawLanguageSwitchIcon(canvas: Canvas, centerX: Float, centerY: Float) {
         keyPaint.color = theme.textColor
         keyPaint.style = Paint.Style.STROKE
@@ -628,6 +733,10 @@ class KeyboardView(
         if (!glideActive && glideDistance >= GLIDE_START_DISTANCE_PX * density &&
             distinctGlideKeyCount() >= 2
         ) {
+            repeatHandler.removeCallbacks(alternateLongPressRunnable)
+            alternatePopupVisible = false
+            alternatePopupOptions = emptyList()
+            alternatePopupSelected = -1
             glideActive = true
         }
         if (glideActive) invalidate()
@@ -715,6 +824,11 @@ class KeyboardView(
     private fun clearPressedState() {
         repeatHandler.removeCallbacks(repeatRunnable)
         repeatHandler.removeCallbacks(spaceLongPressRunnable)
+        repeatHandler.removeCallbacks(alternateLongPressRunnable)
+        alternatePopupVisible = false
+        alternatePopupOptions = emptyList()
+        alternatePopupSelected = -1
+        alternatePopupRect.setEmpty()
         if (backspaceSwipeActive) {
             backspaceSwipeActive = false
             onBackspaceSwipeCancelled()
@@ -775,12 +889,31 @@ class KeyboardView(
     private fun resolvedLayout(): KeyboardLayout {
         val base = layoutProvider.layoutFor(state.language, state.mode)
         val visible = showLanguageSwitch()
-        if (base !== lastBaseLayout || visible != lastLanguageSwitchVisible) {
+        val numberVisible = showNumberRow() && state.mode != KeyboardMode.SYMBOLS
+        if (base !== lastBaseLayout ||
+            visible != lastLanguageSwitchVisible ||
+            numberVisible != lastNumberRowVisible
+        ) {
             lastBaseLayout = base
             lastLanguageSwitchVisible = visible
-            keyboardLayout = if (visible) withLanguageSwitch(base) else base
+            lastNumberRowVisible = numberVisible
+            var resolved = if (numberVisible) withNumberRow(base) else base
+            if (visible) resolved = withLanguageSwitch(resolved)
+            keyboardLayout = resolved
         }
         return keyboardLayout
+    }
+
+    private fun withNumberRow(base: KeyboardLayout): KeyboardLayout {
+        val firstRow = base.rows.firstOrNull()
+        if (firstRow != null && firstRow.keys.size == 10 &&
+            firstRow.keys.all { it.outputText in "1234567890" }
+        ) return base
+        val numberText = "1234567890"
+        val numberRow = com.example.aikeyboard.core.KeyboardRow(
+            Array(numberText.length) { index -> KeySpec.punctuation(numberText[index].toString()) },
+        )
+        return KeyboardLayout(arrayOf(numberRow, *base.rows))
     }
 
     private fun withLanguageSwitch(base: KeyboardLayout): KeyboardLayout {
@@ -867,6 +1000,14 @@ class KeyboardView(
         const val ACTION_TEXT_SIZE_SP = 28f
         const val MODE_LABEL_TEXT_SIZE_SP = 19f
         const val SPACE_LABEL_TEXT_SIZE_SP = 20f
+        const val SHIFT_ICON_TEXT_SIZE_SP = 34f
+        const val POPUP_TEXT_SIZE_SP = 24f
+        const val POPUP_CELL_WIDTH_DP = 44f
+        const val POPUP_HEIGHT_DP = 58f
+        const val POPUP_GAP_DP = 3f
+        const val DEFAULT_LONG_PRESS_DELAY_MS = 500L
+        const val MIN_LONG_PRESS_DELAY_MS = 250L
+        const val MAX_LONG_PRESS_DELAY_MS = 1200L
         val BACKGROUND_COLOR = Color.rgb(243, 244, 246)
         val KEY_COLOR = Color.WHITE
         val SPECIAL_KEY_COLOR = Color.rgb(221, 227, 244)
