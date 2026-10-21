@@ -125,6 +125,7 @@ class KeyboardView(
         if (metrics != null && pressedColumn in metrics.left.indices) {
             alternatePopupAnchorX = (metrics.left[pressedColumn] + metrics.right[pressedColumn]) / 2f
             alternatePopupAnchorY = metrics.top
+            alternatePopupAnchorBottomY = metrics.bottom
         }
         invalidate()
     }
@@ -138,6 +139,7 @@ class KeyboardView(
     private var alternatePopupSelected = -1
     private var alternatePopupAnchorX = 0f
     private var alternatePopupAnchorY = 0f
+    private var alternatePopupAnchorBottomY = 0f
     private val alternatePopupRect = RectF()
     private var rowMetrics: Array<RowMetrics> = emptyArray()
     private var pressedRow = -1
@@ -266,6 +268,12 @@ class KeyboardView(
                 textPaint.getFontMetrics(fontMetrics)
                 val baseline = (metrics.top + metrics.bottom - fontMetrics.ascent - fontMetrics.descent) / 2f
                 canvas.drawText(label, (left + right - textWidth) / 2f, baseline, textPaint)
+                if (longPressAlternatesEnabled() &&
+                    key.type == KeyType.CHARACTER &&
+                    key.alternateTexts.isNotEmpty()
+                ) {
+                    drawAlternateHint(canvas, key.alternateTexts.first(), left, right, metrics.top)
+                }
             }
         }
         drawAlternatePopup(canvas)
@@ -566,6 +574,11 @@ class KeyboardView(
         val widths = FloatArray(count)
         val widthDp = width / density
         val isBottomRow = rowIndex == keyboardLayout.rows.lastIndex
+        val centeredHomeRowIndex =
+            if (showNumberRow() && state.mode != KeyboardMode.SYMBOLS) 2 else 1
+        val isCenteredHomeRow =
+            rowIndex == centeredHomeRowIndex &&
+                row.keys.all { it.type == KeyType.CHARACTER }
         val hasWideActions = row.keys.any {
             it.type == KeyType.SHIFT || it.type == KeyType.BACKSPACE
         }
@@ -609,9 +622,10 @@ class KeyboardView(
                 }
             }
 
-            rowIndex == 1 -> {
-                // The A–L row is intentionally centered. At the 360dp baseline this produces
-                // roughly 22dp of side inset and 31dp normal keys.
+            isCenteredHomeRow -> {
+                // Keep the home row centered after an optional number row is inserted.
+                // Urdu letter rows use the same stable geometry and must not expand
+                // horizontally just because the row index shifted.
                 val preferredInset = SECOND_ROW_INSET_DP * density
                 val normalWidthAtInset = (
                     width - preferredInset * 2f - gap * (count - 1)
@@ -631,7 +645,7 @@ class KeyboardView(
 
         val totalWidth = widths.sum() + gap * (count - 1)
         val start = when {
-            rowIndex == 1 && totalWidth < width -> SECOND_ROW_INSET_DP * density
+            isCenteredHomeRow && totalWidth < width -> SECOND_ROW_INSET_DP * density
             else -> ((width - totalWidth) / 2f).coerceAtLeast(0f)
         }
         var cursor = start
@@ -668,6 +682,28 @@ class KeyboardView(
         invalidate()
     }
 
+    private fun drawAlternateHint(
+        canvas: Canvas,
+        alternate: String,
+        left: Float,
+        right: Float,
+        rowTop: Float,
+    ) {
+        textPaint.color = theme.textColor
+        textPaint.textSize = ALTERNATE_HINT_TEXT_SIZE_SP * scaledDensity
+        textPaint.textAlign = Paint.Align.RIGHT
+        textPaint.getFontMetrics(fontMetrics)
+        val baseline = rowTop + keyInset + ALTERNATE_HINT_TOP_PADDING_DP * density -
+            fontMetrics.ascent
+        canvas.drawText(
+            alternate,
+            right - keyInset - ALTERNATE_HINT_RIGHT_PADDING_DP * density,
+            baseline,
+            textPaint,
+        )
+        textPaint.textAlign = Paint.Align.LEFT
+    }
+
     private fun drawAlternatePopup(canvas: Canvas) {
         if (!alternatePopupVisible || alternatePopupOptions.isEmpty()) return
         val cellWidth = POPUP_CELL_WIDTH_DP * density
@@ -675,8 +711,14 @@ class KeyboardView(
         val popupWidth = cellWidth * alternatePopupOptions.size
         val left = (alternatePopupAnchorX - popupWidth / 2f)
             .coerceIn(0f, (width - popupWidth).coerceAtLeast(0f))
-        val top = (alternatePopupAnchorY - popupHeight - POPUP_GAP_DP * density)
-            .coerceAtLeast(0f)
+        val gap = POPUP_GAP_DP * density
+        val preferredTop = alternatePopupAnchorY - popupHeight - gap
+        val belowTop = alternatePopupAnchorBottomY + gap
+        val top = when {
+            preferredTop >= 0f -> preferredTop
+            belowTop + popupHeight <= height -> belowTop
+            else -> 0f
+        }.coerceIn(0f, (height - popupHeight).coerceAtLeast(0f))
         alternatePopupRect.set(left, top, left + popupWidth, top + popupHeight)
         keyPaint.style = Paint.Style.FILL
         keyPaint.color = theme.keyColor
@@ -841,6 +883,7 @@ class KeyboardView(
         alternatePopupOptions = emptyList()
         alternatePopupSelected = -1
         alternatePopupRect.setEmpty()
+        alternatePopupAnchorBottomY = 0f
         if (backspaceSwipeActive) {
             backspaceSwipeActive = false
             onBackspaceSwipeCancelled()
@@ -1014,6 +1057,9 @@ class KeyboardView(
         const val SPACE_LABEL_TEXT_SIZE_SP = 20f
         const val SHIFT_ICON_TEXT_SIZE_SP = 34f
         const val POPUP_TEXT_SIZE_SP = 24f
+        const val ALTERNATE_HINT_TEXT_SIZE_SP = 11f
+        const val ALTERNATE_HINT_TOP_PADDING_DP = 3f
+        const val ALTERNATE_HINT_RIGHT_PADDING_DP = 4f
         const val POPUP_CELL_WIDTH_DP = 44f
         const val POPUP_HEIGHT_DP = 58f
         const val POPUP_GAP_DP = 3f
