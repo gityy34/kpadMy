@@ -530,13 +530,20 @@ class KeyboardView(
      * stretch/shrink the key boxes instead of merely translating the keyboard.
      */
     private fun rowHeightsDp(availableHeightDp: Float, normalRows: Int): Pair<Float, Float> {
+        val safeRows = normalRows.coerceAtLeast(1)
         val delta = availableHeightDp - RESIZE_BASE_HEIGHT_DP
-        val normalHeight = (
-            NORMAL_KEY_HEIGHT_DP + delta * NORMAL_HEIGHT_DELTA_SHARE / normalRows
-        ).coerceIn(MIN_NORMAL_KEY_HEIGHT_DP, MAX_NORMAL_KEY_HEIGHT_DP)
         val bottomHeight = (
             BOTTOM_ROW_HEIGHT_DP + delta * BOTTOM_HEIGHT_DELTA_SHARE
         ).coerceIn(MIN_BOTTOM_ROW_HEIGHT_DP, MAX_BOTTOM_ROW_HEIGHT_DP)
+        val desiredNormalHeight =
+            NORMAL_KEY_HEIGHT_DP + delta * NORMAL_HEIGHT_DELTA_SHARE / safeRows
+        val availableForNormalRows = (
+            availableHeightDp - bottomHeight - ROW_GAP_DP * safeRows
+        ).coerceAtLeast(0f)
+        val fittingNormalHeight = availableForNormalRows / safeRows
+        val normalHeight = desiredNormalHeight
+            .coerceAtMost(fittingNormalHeight)
+            .coerceIn(MIN_NORMAL_KEY_HEIGHT_DP, MAX_NORMAL_KEY_HEIGHT_DP)
         return normalHeight to bottomHeight
     }
 
@@ -981,7 +988,7 @@ class KeyboardView(
         const val RESIZE_BASE_HEIGHT_DP = 270f
         const val NORMAL_HEIGHT_DELTA_SHARE = 0.75f
         const val BOTTOM_HEIGHT_DELTA_SHARE = 0.25f
-        const val MIN_NORMAL_KEY_HEIGHT_DP = 40f
+        const val MIN_NORMAL_KEY_HEIGHT_DP = 32f
         const val MAX_NORMAL_KEY_HEIGHT_DP = 110f
         const val MIN_BOTTOM_ROW_HEIGHT_DP = 44f
         const val MAX_BOTTOM_ROW_HEIGHT_DP = 92f
