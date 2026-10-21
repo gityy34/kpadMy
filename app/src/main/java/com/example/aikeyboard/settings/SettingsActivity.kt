@@ -157,7 +157,7 @@ class SettingsActivity : Activity() {
             setPadding(0, 0, 0, 0)
             background = null
             gravity = Gravity.CENTER_VERTICAL
-            includeFontPadding = true
+            includeFontPadding = false
         }
         searchShell.addView(
             search,
@@ -358,6 +358,7 @@ class SettingsActivity : Activity() {
     }
 
     private fun categoryRow(category: SettingsCategory): View {
+        val rowHeight = dp(64)
         val wrapper = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             isClickable = true
@@ -368,7 +369,6 @@ class SettingsActivity : Activity() {
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, 0, 0, 0)
         }
         val icon = SettingsIconView(
             this,
@@ -381,39 +381,36 @@ class SettingsActivity : Activity() {
         }
         row.addView(
             icon,
-            LinearLayout.LayoutParams(dp(48), dp(56)).apply {
+            LinearLayout.LayoutParams(dp(52), rowHeight).apply {
                 rightMargin = dp(8)
             },
         )
         row.addView(
             label(category.title, 17f, activeTheme.textColor).apply {
                 gravity = Gravity.CENTER_VERTICAL
-                setTypeface(Typeface.create("sans-serif", Typeface.NORMAL))
                 maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
             },
-            LinearLayout.LayoutParams(0, dp(56), 1f),
+            LinearLayout.LayoutParams(0, rowHeight, 1f),
         )
         row.addView(
             SettingsChevronView(this).apply {
                 lineColor = activeTheme.borderColor
-                contentDescription = "Open \${category.title}"
+                contentDescription = "Open " + category.title
             },
-            LinearLayout.LayoutParams(dp(28), dp(56)),
+            LinearLayout.LayoutParams(dp(30), rowHeight),
         )
-        wrapper.addView(
-            row,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                dp(56),
-            ),
-        )
+        wrapper.addView(row, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            rowHeight,
+        ))
         wrapper.addView(
             View(this).apply { setBackgroundColor(dividerColor()) },
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(1),
             ).apply {
-                leftMargin = dp(56)
+                leftMargin = dp(60)
             },
         )
         return wrapper
@@ -425,13 +422,13 @@ class SettingsActivity : Activity() {
         onRowClick: (() -> Unit)? = null,
     ): View {
         val enabled = entry.available
-        val height = if (showPath) 72 else 62
+        val height = dp(if (showPath) 84 else 76)
         val row = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(3), 0, dp(3))
+            setPadding(0, dp(5), 0, dp(5))
             alpha = if (enabled) 1f else 0.56f
-            contentDescription = "\${entry.title}: \${entry.description}"
+            contentDescription = entry.title + ": " + entry.description
         }
 
         val icon = SettingsIconView(
@@ -442,12 +439,12 @@ class SettingsActivity : Activity() {
             iconColor = if (enabled) activeTheme.accentColor else mutedColor()
             contentDescription = entry.title
         }
-        row.addView(icon, LinearLayout.LayoutParams(dp(38), height))
+        row.addView(icon, LinearLayout.LayoutParams(dp(42), height))
 
         val text = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(6), 0, dp(6), 0)
+            setPadding(dp(8), dp(2), dp(8), dp(2))
         }
         text.addView(label(entry.title, 15f, activeTheme.textColor).apply {
             maxLines = 1
@@ -456,6 +453,7 @@ class SettingsActivity : Activity() {
         text.addView(label(entry.description, 12f, mutedColor()).apply {
             maxLines = if (showPath) 1 else 2
             ellipsize = android.text.TextUtils.TruncateAt.END
+            setLineSpacing(dp(1).toFloat(), 1f)
         })
         if (showPath) {
             text.addView(label(entry.path, 11f, activeTheme.accentColor).apply {
@@ -477,7 +475,7 @@ class SettingsActivity : Activity() {
                         lineColor = activeTheme.accentColor
                         contentDescription = "Open setting"
                     },
-                    LinearLayout.LayoutParams(dp(28), height),
+                    LinearLayout.LayoutParams(dp(30), height),
                 )
             }
             toggleKey != null -> {
@@ -495,7 +493,7 @@ class SettingsActivity : Activity() {
                     contentDescription = entry.title
                     setOnCheckedChangeListener { _, checked -> writeToggle(toggleKey, checked) }
                 }
-                row.addView(toggle, LinearLayout.LayoutParams(dp(54), height))
+                row.addView(toggle, LinearLayout.LayoutParams(dp(58), height))
                 row.setOnClickListener { toggle.performClick() }
             }
             action != null && enabled -> {
@@ -507,7 +505,7 @@ class SettingsActivity : Activity() {
                         lineColor = activeTheme.accentColor
                         contentDescription = "Open setting"
                     },
-                    LinearLayout.LayoutParams(dp(28), height),
+                    LinearLayout.LayoutParams(dp(30), height),
                 )
             }
             !enabled -> {
@@ -523,7 +521,7 @@ class SettingsActivity : Activity() {
                     SettingsIconView(this, SettingsIconKind.INFO, showCircle = false).apply {
                         iconColor = mutedColor()
                     },
-                    LinearLayout.LayoutParams(dp(28), height),
+                    LinearLayout.LayoutParams(dp(30), height),
                 )
             }
         }
@@ -531,20 +529,17 @@ class SettingsActivity : Activity() {
         val wrapper = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
         }
-        wrapper.addView(
-            row,
-            LinearLayout.LayoutParams(
-                LinearLayout.LayoutParams.MATCH_PARENT,
-                height,
-            ),
-        )
+        wrapper.addView(row, LinearLayout.LayoutParams(
+            LinearLayout.LayoutParams.MATCH_PARENT,
+            height,
+        ))
         wrapper.addView(
             View(this).apply { setBackgroundColor(dividerColor()) },
             LinearLayout.LayoutParams(
                 LinearLayout.LayoutParams.MATCH_PARENT,
                 dp(1),
             ).apply {
-                leftMargin = dp(46)
+                leftMargin = dp(52)
             },
         )
         return wrapper
@@ -593,6 +588,8 @@ class SettingsActivity : Activity() {
     private fun renderKeyBehaviorControls() {
         currentCategoryId = KEY_BEHAVIOR_CONTROLS_ID
         renderedRows.clear()
+        headerTitle.text = "Key press behavior"
+        headerBack.contentDescription = "Back to Preferences"
         applyThemeToScreen()
         body.removeAllViews()
         addSectionHeader(
@@ -659,6 +656,8 @@ class SettingsActivity : Activity() {
     private fun renderAppearanceControls() {
         currentCategoryId = APPEARANCE_CONTROLS_ID
         renderedRows.clear()
+        headerTitle.text = "Font & Emoji Size"
+        headerBack.contentDescription = "Back to Preferences"
         applyThemeToScreen()
         body.removeAllViews()
         addSectionHeader(
@@ -922,7 +921,8 @@ class SettingsActivity : Activity() {
         text = value
         textSize = size
         setTextColor(color)
-        includeFontPadding = true
+        typeface = Typeface.create("sans-serif", Typeface.NORMAL)
+        includeFontPadding = false
     }
 
     private fun mutedColor(): Int = Color.argb(
