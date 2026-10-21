@@ -45,7 +45,7 @@ class KeyboardToolbarView(
     }
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = TEXT_COLOR
-        textSize = 22f * density
+        textSize = 20f * density
         textAlign = Paint.Align.CENTER
     }
     private val iconStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -132,6 +132,21 @@ class KeyboardToolbarView(
     fun showToolbarActions() {
         centerMode = CenterMode.TOOLBAR
         candidates = emptyList()
+        invalidate()
+    }
+
+    /** Adds one supported tool without duplicating the persisted toolbar order. */
+    fun addToolbarItem(item: String) {
+        if (item !in SUPPORTED_TOOLBAR_ITEMS || centerItems.contains(item)) return
+        centerItems += item
+        onOrderChanged(centerItems.toList())
+        invalidate()
+    }
+
+    fun removeToolbarItem(item: String) {
+        if (item !in centerItems || centerItems.size <= 1) return
+        centerItems.remove(item)
+        onOrderChanged(centerItems.toList())
         invalidate()
     }
 
@@ -291,6 +306,12 @@ class KeyboardToolbarView(
         "settings" -> "⚙"
         "search" -> "⌕"
         "resize" -> "↕"
+        "language" -> "◎"
+        "themes" -> "◉"
+        "emoji" -> "☺"
+        "clipboard" -> "▣"
+        "undo" -> "↶"
+        "redo" -> "↷"
         else -> "•"
     }
 
@@ -446,6 +467,9 @@ class KeyboardToolbarView(
         val PRESSED_COLOR = Color.rgb(220, 229, 255)
         val DIVIDER_COLOR = Color.rgb(220, 223, 230)
         val TEXT_COLOR = Color.rgb(32, 33, 36)
+        val SUPPORTED_TOOLBAR_ITEMS = setOf(
+            "settings", "search", "resize", "language", "themes", "emoji", "clipboard", "undo", "redo",
+        )
     }
 
     private enum class CenterMode { TOOLBAR, SUGGESTIONS }
