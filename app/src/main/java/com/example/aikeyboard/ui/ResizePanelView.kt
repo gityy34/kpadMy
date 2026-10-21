@@ -19,6 +19,7 @@ import kotlin.math.roundToInt
  * important: the lower handle must never be clipped at the old content height or fall into the
  * Android navigation region.
  */
+// Resize interaction remains isolated from normal keyboard input and IME content updates.
 class ResizePanelView(
     context: Context,
     initialConfiguration: ResizeConfiguration,
