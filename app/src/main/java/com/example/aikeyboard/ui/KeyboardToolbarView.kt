@@ -29,6 +29,7 @@ class KeyboardToolbarView(
     private val onCandidateLongPressed: (SuggestionCandidate) -> Unit,
     private val onOrderChanged: (List<String>) -> Unit,
     suggestionSlotCount: Int = 3,
+    private val fontScale: () -> Float = { 1f },
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -44,7 +45,7 @@ class KeyboardToolbarView(
     }
     private val iconPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color = TEXT_COLOR
-        textSize = 22f * density
+        textSize = 20f * density
         textAlign = Paint.Align.CENTER
     }
     private val iconStrokePaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -54,8 +55,9 @@ class KeyboardToolbarView(
         strokeCap = Paint.Cap.ROUND
         strokeJoin = Paint.Join.ROUND
     }
+    private val micButtonPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var theme = KeyboardTheme.SOLID_WHITE
-    private val suggestionSlotCount = suggestionSlotCount.coerceIn(3, 4)
+    private val fixedSuggestionSlotCount = 3
     private val handler = Handler(Looper.getMainLooper())
     private val longPress = Runnable {
         val item = centerItems.getOrNull(pressedIndex)
@@ -73,6 +75,7 @@ class KeyboardToolbarView(
     private val centerItems = initialOrder.toMutableList()
     private var candidates: List<SuggestionCandidate> = emptyList()
     private var centerMode = CenterMode.TOOLBAR
+    private var closePanelMode = false
     private var activePointerId = INVALID_POINTER
     private var pressedIndex = -1
     private var reorderMode = false
@@ -80,6 +83,7 @@ class KeyboardToolbarView(
 
     init {
         isClickable = true
+        contentDescription = "Keyboard toolbar. Tools menu and Voice typing."
         setBackgroundColor(BACKGROUND_COLOR)
     }
 
@@ -90,12 +94,32 @@ class KeyboardToolbarView(
         dividerPaint.color = value.borderColor
         textPaint.color = value.textColor
         iconPaint.color = value.textColor
+        micButtonPaint.color = value.keyColor
         invalidate()
     }
 
     fun setCandidates(value: List<SuggestionCandidate>) {
+        setCandidates(exactTyped = null, value = value)
+    }
+
+    /**
+     * Puts the exact current token in cell 1, then fills the remaining cells with candidates.
+     * Candidate objects retain their complete text for commit handling.
+     */
+    fun setCandidates(
+        exactTyped: SuggestionCandidate?,
+        value: List<SuggestionCandidate>,
+    ) {
         if (centerMode != CenterMode.SUGGESTIONS) return
-        candidates = value.take(suggestionSlotCount)
+        val next = ArrayList<SuggestionCandidate>(fixedSuggestionSlotCount)
+        exactTyped?.let { next += it }
+        value.forEach { candidate ->
+            if (next.size >= fixedSuggestionSlotCount) return@forEach
+            if (exactTyped == null || candidate.text != exactTyped.text) {
+                next += candidate
+            }
+        }
+        candidates = next
         invalidate()
     }
 
@@ -111,6 +135,21 @@ class KeyboardToolbarView(
         invalidate()
     }
 
+    /** Adds one supported tool without duplicating the persisted toolbar order. */
+    fun addToolbarItem(item: String) {
+        if (item !in SUPPORTED_TOOLBAR_ITEMS || centerItems.contains(item)) return
+        centerItems += item
+        onOrderChanged(centerItems.toList())
+        invalidate()
+    }
+
+    fun removeToolbarItem(item: String) {
+        if (item !in centerItems || centerItems.size <= 1) return
+        centerItems.remove(item)
+        onOrderChanged(centerItems.toList())
+        invalidate()
+    }
+
     fun showSuggestions() {
         centerMode = CenterMode.SUGGESTIONS
         invalidate()
@@ -123,10 +162,26 @@ class KeyboardToolbarView(
         if (enabled) showToolbarActions() else invalidate()
     }
 
+    /**
+     * Reuses the permanently reserved left toolbar cell as a close/back control while an
+     * in-keyboard tools panel is open. The cell size and hit target never change.
+     */
+    fun setClosePanelMode(enabled: Boolean) {
+        if (closePanelMode == enabled) return
+        closePanelMode = enabled
+        invalidate()
+    }
+
+    fun isClosePanelMode(): Boolean = closePanelMode
+
     override fun onDraw(canvas: Canvas) {
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         val edge = EDGE_WIDTH_DP * density
-        drawToolsIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        if (closePanelMode) {
+            drawCloseIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        } else {
+            drawToolsIcon(canvas, edge / 2f, pressedIndex == EDGE_TOOLS)
+        }
         drawMicrophoneIcon(canvas, width - edge / 2f, pressedIndex == EDGE_MIC)
         canvas.drawRect(edge - 1f, 0f, edge, height.toFloat(), dividerPaint)
         canvas.drawRect(width - edge, 0f, width - edge + 1f, height.toFloat(), dividerPaint)
@@ -134,16 +189,22 @@ class KeyboardToolbarView(
         val centerLeft = edge
         val centerRight = width - edge
         val slots = if (centerMode == CenterMode.SUGGESTIONS) {
-            suggestionSlotCount
+            fixedSuggestionSlotCount
         } else {
             centerItems.size.coerceAtLeast(1)
         }
         val centerWidth = (centerRight - centerLeft) / slots
         if (centerMode == CenterMode.SUGGESTIONS) {
-            candidates.forEachIndexed { index, candidate ->
+            for (index in 0 until fixedSuggestionSlotCount) {
                 val left = centerLeft + centerWidth * index
-                if (index == pressedIndex) canvas.drawRect(left, 0f, left + centerWidth, height.toFloat(), pressedPaint)
-                drawText(canvas, candidate.text, left, left + centerWidth, containsRtl(candidate.text))
+                val right = left + centerWidth
+                if (index == pressedIndex) canvas.drawRect(left, 0f, right, height.toFloat(), pressedPaint)
+                if (index < fixedSuggestionSlotCount - 1) {
+                    canvas.drawRect(right - 1f, 0f, right, height.toFloat(), dividerPaint)
+                }
+                candidates.getOrNull(index)?.let { candidate ->
+                    drawText(canvas, candidate.text, left, right)
+                }
             }
         } else {
             centerItems.forEachIndexed { index, item ->
@@ -233,7 +294,7 @@ class KeyboardToolbarView(
         if (x < edge) return -2
         if (x >= width - edge) return -3
         val slots = if (centerMode == CenterMode.SUGGESTIONS) {
-            suggestionSlotCount
+            fixedSuggestionSlotCount
         } else {
             centerItems.size.coerceAtLeast(1)
         }
@@ -245,6 +306,12 @@ class KeyboardToolbarView(
         "settings" -> "⚙"
         "search" -> "⌕"
         "resize" -> "↕"
+        "language" -> "◎"
+        "themes" -> "◉"
+        "emoji" -> "☺"
+        "clipboard" -> "▣"
+        "undo" -> "↶"
+        "redo" -> "↷"
         else -> "•"
     }
 
@@ -259,19 +326,29 @@ class KeyboardToolbarView(
                 centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
         }
         iconStrokePaint.color = theme.textColor
-        val half = 10f * density
-        val knob = 2.5f * density
-        val y1 = height / 2f - 8f * density
-        val y2 = height / 2f
-        val y3 = height / 2f + 8f * density
-        canvas.drawLine(centerX - half, y1, centerX + half, y1, iconStrokePaint)
-        canvas.drawLine(centerX - half, y2, centerX + half, y2, iconStrokePaint)
-        canvas.drawLine(centerX - half, y3, centerX + half, y3, iconStrokePaint)
         iconStrokePaint.style = Paint.Style.FILL
-        canvas.drawCircle(centerX - 3f * density, y1, knob, iconStrokePaint)
-        canvas.drawCircle(centerX + 4f * density, y2, knob, iconStrokePaint)
-        canvas.drawCircle(centerX - 1f * density, y3, knob, iconStrokePaint)
+        val centerY = height / 2f
+        val radius = 2.2f * density
+        val spacing = 7f * density
+        canvas.drawCircle(centerX, centerY - spacing, radius, iconStrokePaint)
+        canvas.drawCircle(centerX, centerY, radius, iconStrokePaint)
+        canvas.drawCircle(centerX, centerY + spacing, radius, iconStrokePaint)
         iconStrokePaint.style = Paint.Style.STROKE
+    }
+
+    private fun drawCloseIcon(canvas: Canvas, centerX: Float, pressed: Boolean) {
+        if (pressed) {
+            canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
+                centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
+        }
+        iconStrokePaint.color = theme.textColor
+        iconStrokePaint.style = Paint.Style.STROKE
+        iconStrokePaint.strokeWidth = 2.6f * density
+        val centerY = height / 2f
+        val half = 10f * density
+        canvas.drawLine(centerX - half, centerY - half, centerX + half, centerY + half, iconStrokePaint)
+        canvas.drawLine(centerX + half, centerY - half, centerX - half, centerY + half, iconStrokePaint)
+        iconStrokePaint.strokeWidth = 2.2f * density
     }
 
     private fun drawMicrophoneIcon(canvas: Canvas, centerX: Float, pressed: Boolean) {
@@ -279,48 +356,99 @@ class KeyboardToolbarView(
             canvas.drawRect(centerX - EDGE_WIDTH_DP * density / 2f, 0f,
                 centerX + EDGE_WIDTH_DP * density / 2f, height.toFloat(), pressedPaint)
         }
-        iconStrokePaint.color = theme.textColor
+
+        // Reference-shaped microphone inside a compact circular button. The circle is a
+        // touch/visual container; the microphone itself remains a scalable vector.
+        val scale = (height / (44f * density)).coerceIn(0.72f, 1f)
+        val d = density * scale
         val centerY = height / 2f
-        val capsuleWidth = 7f * density
-        val capsuleTop = centerY - 13f * density
-        val capsuleBottom = centerY + 3f * density
-        iconStrokePaint.style = Paint.Style.FILL
-        canvas.drawRoundRect(
-            centerX - capsuleWidth,
-            capsuleTop,
-            centerX + capsuleWidth,
-            capsuleBottom,
-            capsuleWidth,
-            capsuleWidth,
-            iconStrokePaint,
-        )
+        val circleRadius = (height / 2f - 1.5f * d).coerceAtLeast(10f * d)
+
+        micButtonPaint.color = theme.keyColor
+        micButtonPaint.style = Paint.Style.FILL
+        canvas.drawCircle(centerX, centerY, circleRadius, micButtonPaint)
+
+        iconStrokePaint.color = theme.borderColor
         iconStrokePaint.style = Paint.Style.STROKE
-        iconStrokePaint.strokeWidth = 2.6f * density
-        val arcLeft = centerX - 13f * density
-        val arcTop = centerY - 5f * density
-        val arcRight = centerX + 13f * density
-        val arcBottom = centerY + 10f * density
-        canvas.drawArc(arcLeft, arcTop, arcRight, arcBottom, 0f, 180f, false, iconStrokePaint)
-        canvas.drawLine(centerX, arcBottom, centerX, centerY + 16f * density, iconStrokePaint)
-        canvas.drawLine(centerX - 8f * density, centerY + 16f * density,
-            centerX + 8f * density, centerY + 16f * density, iconStrokePaint)
+        iconStrokePaint.strokeWidth = 1f * d
+        canvas.drawCircle(centerX, centerY, circleRadius, iconStrokePaint)
+
+        val bodyWidth = 7.2f * d
+        val bodyTop = centerY - 16f * d
+        val bodyBottom = centerY + 5f * d
+        val arcLeft = centerX - 13.5f * d
+        val arcTop = centerY - 7f * d
+        val arcRight = centerX + 13.5f * d
+        val arcBottom = centerY + 11f * d
+        val stemBottom = centerY + 16f * d
+        val baseHalfWidth = 8f * d
+
+        fun drawReferenceGeometry() {
+            canvas.drawRoundRect(
+                centerX - bodyWidth,
+                bodyTop,
+                centerX + bodyWidth,
+                bodyBottom,
+                bodyWidth,
+                bodyWidth,
+                iconStrokePaint,
+            )
+            canvas.drawArc(
+                arcLeft,
+                arcTop,
+                arcRight,
+                arcBottom,
+                0f,
+                180f,
+                false,
+                iconStrokePaint,
+            )
+            canvas.drawLine(centerX, arcBottom, centerX, stemBottom, iconStrokePaint)
+            canvas.drawLine(
+                centerX - baseHalfWidth,
+                stemBottom,
+                centerX + baseHalfWidth,
+                stemBottom,
+                iconStrokePaint,
+            )
+        }
+
+        // Black on light themes and white/light on dark themes through the existing
+        // theme foreground system; no fixed purple and no bitmap.
+        iconStrokePaint.color = theme.textColor
+        iconStrokePaint.strokeCap = Paint.Cap.ROUND
+        iconStrokePaint.strokeJoin = Paint.Join.ROUND
+
+        iconStrokePaint.alpha = 42
+        iconStrokePaint.strokeWidth = 5.2f * d
+        drawReferenceGeometry()
+
+        iconStrokePaint.alpha = 255
+        iconStrokePaint.strokeWidth = 1.9f * d
+        drawReferenceGeometry()
         iconStrokePaint.strokeWidth = 2.2f * density
     }
 
-    private fun drawText(canvas: Canvas, value: String, left: Float, right: Float, rtl: Boolean) {
-        val available = (right - left - 16f * density).roundToInt().coerceAtLeast(1)
-        val direction = if (rtl) TextDirectionHeuristics.FIRSTSTRONG_RTL else TextDirectionHeuristics.FIRSTSTRONG_LTR
-        val layout = StaticLayout.Builder.obtain(value, 0, value.length, textPaint, available)
-            .setAlignment(Layout.Alignment.ALIGN_CENTER).setIncludePad(false).setMaxLines(1)
-            .setEllipsize(TextUtils.TruncateAt.END)
-            .setTextDirection(direction).build()
+    private fun drawText(canvas: Canvas, value: String, left: Float, right: Float) {
+        val horizontalPadding = 8f * density
+        val available = (right - left - horizontalPadding * 2f).roundToInt().coerceAtLeast(1)
+        val fitted = SuggestionDisplay.fit(
+            fullText = value,
+            availableWidthPx = available.toFloat(),
+            baseTextSizePx = 23f * fontScale().coerceIn(0.75f, 1.35f) * scaledDensity,
+            scaledDensity = scaledDensity,
+            textPaint = textPaint,
+        )
+        textPaint.textSize = fitted.textSizePx
+        textPaint.textScaleX = fitted.textScaleX
+        textPaint.textAlign = Paint.Align.CENTER
         canvas.save()
-        // The center cells are a hard visual boundary. This prevents long LTR/RTL labels from
-        // ever drawing over the permanently reserved Tools and microphone cells.
         canvas.clipRect(left, 0f, right, height.toFloat())
-        canvas.translate(left + 8f * density, ((height - layout.height) / 2f).coerceAtLeast(0f))
-        layout.draw(canvas)
+        val centerX = (left + right) / 2f
+        val baseline = height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f
+        canvas.drawText(fitted.text, centerX, baseline, textPaint)
         canvas.restore()
+        textPaint.textScaleX = 1f
     }
 
     private fun containsRtl(value: String): Boolean = value.any { it.code in 0x0590..0x08FF }
@@ -329,7 +457,7 @@ class KeyboardToolbarView(
         const val DEFAULT_SUGGESTION_SLOT_COUNT = 3
         const val EDGE_TOOLS = -2
         const val EDGE_MIC = -3
-        const val EDGE_WIDTH_DP = 56f
+        const val EDGE_WIDTH_DP = 46f
         // Keep suggestions at a clearly readable keyboard-label size. This changes only the
         // text paint; the fixed toolbar height and touch geometry remain unchanged.
         const val SUGGESTION_TEXT_SIZE_SP = 23f
@@ -339,6 +467,9 @@ class KeyboardToolbarView(
         val PRESSED_COLOR = Color.rgb(220, 229, 255)
         val DIVIDER_COLOR = Color.rgb(220, 223, 230)
         val TEXT_COLOR = Color.rgb(32, 33, 36)
+        val SUPPORTED_TOOLBAR_ITEMS = setOf(
+            "settings", "search", "resize", "language", "themes", "emoji", "clipboard", "undo", "redo",
+        )
     }
 
     private enum class CenterMode { TOOLBAR, SUGGESTIONS }

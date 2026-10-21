@@ -75,10 +75,10 @@ class KeyboardState(initialMode: KeyboardMode) {
     }
 
     fun toggleLanguage() {
-        language = if (language == KeyboardLanguage.ENGLISH) {
-            KeyboardLanguage.URDU
-        } else {
-            KeyboardLanguage.ENGLISH
+        language = when (language) {
+            KeyboardLanguage.ENGLISH -> KeyboardLanguage.URDU
+            KeyboardLanguage.URDU -> KeyboardLanguage.ROMAN_URDU
+            KeyboardLanguage.ROMAN_URDU -> KeyboardLanguage.ENGLISH
         }
         shiftState = ShiftState.OFF
         lastShiftUptime = Long.MIN_VALUE

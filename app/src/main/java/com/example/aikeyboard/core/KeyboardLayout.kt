@@ -96,9 +96,53 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
     private fun keys(text: String): Array<KeySpec> = Array(text.length) { index ->
         val character = text[index].toString()
         if (character[0].isLetter()) {
-            KeySpec.character(character, character.uppercase())
+            KeySpec.character(
+                lowercase = character,
+                uppercase = character.uppercase(),
+                alternateTexts = secondaryCharacters(character),
+            )
         } else {
             KeySpec.punctuation(character)
         }
+    }
+
+    /**
+     * The mapping follows familiar mobile-keyboard punctuation placement while keeping each
+     * alternate as real committed text. Urdu letters expose useful Arabic diacritics; Roman Urdu
+     * reuses the English mapping through the existing Latin layout.
+     */
+    private fun secondaryCharacters(character: String): List<String> = when (character.lowercase()) {
+        "q" -> listOf("%")
+        "w" -> listOf("\\")
+        "e" -> listOf("|")
+        "r" -> listOf("=")
+        "t" -> listOf("[")
+        "y" -> listOf("]")
+        "u" -> listOf("<")
+        "i" -> listOf(">")
+        "o" -> listOf("{")
+        "p" -> listOf("}")
+        "a" -> listOf("@")
+        "s" -> listOf("#")
+        "d" -> listOf("$")
+        "f" -> listOf("-")
+        "g" -> listOf("&")
+        "h" -> listOf("_")
+        "j" -> listOf("+")
+        "k" -> listOf("(")
+        "l" -> listOf(")")
+        "z" -> listOf("*")
+        "x" -> listOf("\"")
+        "c" -> listOf("'")
+        "v" -> listOf(":")
+        "b" -> listOf(";")
+        "n" -> listOf("!")
+        "m" -> listOf("?")
+        "ق", "و", "ع", "ر", "ت", "ی", "ا", "ے", "ہ", "پ",
+        "س", "ڈ", "د", "ذ", "ز", "ژ", "ش", "ص", "ض", "ط",
+        "ظ", "غ", "ف", "ک", "گ", "ل", "ن", "ں", "ب", "م",
+        "ٹ", "ث", "ج", "چ", "ح", "خ", "ء", "ھ", "ئ", "ؤ" ->
+            listOf("َ", "ِ", "ُ", "ّ", "ْ")
+        else -> emptyList()
     }
 }

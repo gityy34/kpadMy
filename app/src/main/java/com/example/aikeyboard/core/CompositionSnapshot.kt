@@ -1,5 +1,6 @@
 package com.example.aikeyboard.core
 
+import android.view.inputmethod.ExtractedTextRequest
 import android.view.inputmethod.InputConnection
 import java.io.Closeable
 import java.util.concurrent.ExecutorService
@@ -110,14 +111,19 @@ class CompositionController(
             val before = inputConnection.getTextBeforeCursor(MAX_CONTEXT_UTF16, 0)?.toString().orEmpty()
             val after = inputConnection.getTextAfterCursor(MAX_CONTEXT_UTF16, 0)?.toString().orEmpty()
             val selected = inputConnection.getSelectedText(0)?.toString()
+            val extracted = inputConnection.getExtractedText(ExtractedTextRequest(), 0)
+            val actualSelectionStart = extracted?.selectionStart
+                ?.takeIf { it >= 0 } ?: selectionStart
+            val actualSelectionEnd = extracted?.selectionEnd
+                ?.takeIf { it >= 0 } ?: selectionEnd
             if (generationCounter.get() != generation) return@submit
 
             val snapshot = CompositionSnapshot(
                 textBeforeCursor = before,
                 textAfterCursor = after,
                 selectedText = selected,
-                selectionStart = selectionStart,
-                selectionEnd = selectionEnd,
+                selectionStart = actualSelectionStart,
+                selectionEnd = actualSelectionEnd,
                 currentWord = currentWord(before) + nextWord(after),
                 activeLanguage = activeLanguage,
                 editorInputState = editorInputState,
