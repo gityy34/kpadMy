@@ -53,9 +53,11 @@ class ResizePanelView(
     init {
         isClickable = true
         isFocusable = true
-        // Keep Back routed through this overlay while Resize is active. The overlay owns the
-        // workspace touch/focus state; normal keyboard focus is restored when it is removed.
-        requestFocus()
+        // Keep Back routed through this overlay after it is attached. Calling requestFocus
+        // before addView can be ignored by Android, leaving the IME Back path inconsistent.
+        post {
+            if (isAttachedToWindow) requestFocus()
+        }
         setBackgroundColor(Color.TRANSPARENT)
     }
 
