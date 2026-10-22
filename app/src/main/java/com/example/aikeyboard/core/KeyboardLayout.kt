@@ -30,7 +30,7 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
             KeyboardRow(
                 arrayOf(
                     KeySpec.action(KeyType.MODE_SWITCH, "?123", 1.5f),
-                    KeySpec.punctuation(","),
+                    KeySpec.punctuation(",", alternateTexts = listOf("🙂")),
                     KeySpec.space(),
                     KeySpec.punctuation("."),
                     KeySpec.action(KeyType.ENTER, "↵", 1.5f),
@@ -48,7 +48,7 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
             KeyboardRow(
                 arrayOf(
                     KeySpec.action(KeyType.MODE_SWITCH, "?123", 1.5f),
-                    KeySpec.punctuation("،"),
+                    KeySpec.punctuation("،", alternateTexts = listOf("🙂")),
                     KeySpec.space(),
                     KeySpec.punctuation("۔"),
                     KeySpec.action(KeyType.ENTER, "↵", 1.5f),
