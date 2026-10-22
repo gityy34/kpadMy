@@ -55,6 +55,7 @@ class SettingsActivity : Activity() {
     private lateinit var categories: List<SettingsCategory>
     private var activeTheme = KeyboardTheme.SOLID_WHITE
     private var currentCategoryId: String? = null
+    private var keyBehaviorPreviousCategoryId: String? = null
     private val renderedRows = linkedMapOf<String, View>()
     private lateinit var headerBack: SettingsIconView
     private lateinit var headerTitle: TextView
@@ -96,7 +97,19 @@ class SettingsActivity : Activity() {
     }
 
     override fun onBackPressed() {
-        if (currentCategoryId != null) {
+        navigateBack()
+    }
+
+    private fun navigateBack() {
+        if (currentCategoryId == KEY_BEHAVIOR_CONTROLS_ID) {
+            val previous = keyBehaviorPreviousCategoryId
+            keyBehaviorPreviousCategoryId = null
+            if (previous != null) {
+                renderCategory(previous)
+            } else {
+                renderHome()
+            }
+        } else if (currentCategoryId != null) {
             renderHome()
         } else {
             super.onBackPressed()
@@ -118,7 +131,7 @@ class SettingsActivity : Activity() {
         headerBack = SettingsIconView(this, SettingsIconKind.BACK, showCircle = true).apply {
             contentDescription = "Back"
             setOnClickListener {
-                if (currentCategoryId != null) renderHome() else finish()
+                if (currentCategoryId != null) navigateBack() else finish()
             }
         }
         header.addView(headerBack, LinearLayout.LayoutParams(dp(44), dp(48)))
@@ -549,7 +562,12 @@ class SettingsActivity : Activity() {
         when (action) {
             SettingAction.OPEN_THEMES -> startActivity(Intent(this, ThemeActivity::class.java))
             SettingAction.OPEN_APPEARANCE_CONTROLS -> renderAppearanceControls()
-            SettingAction.OPEN_KEY_BEHAVIOR_CONTROLS -> renderKeyBehaviorControls()
+            SettingAction.OPEN_KEY_BEHAVIOR_CONTROLS -> {
+                keyBehaviorPreviousCategoryId = currentCategoryId?.takeUnless {
+                    it == KEY_BEHAVIOR_CONTROLS_ID
+                }
+                renderKeyBehaviorControls()
+            }
             SettingAction.RESET_TOOLBAR -> {
                 settings.setToolbarOrder(KeyboardSettings.DEFAULT_TOOLBAR_ORDER)
                 Toast.makeText(this, "Toolbar layout reset", Toast.LENGTH_SHORT).show()
@@ -570,7 +588,7 @@ class SettingsActivity : Activity() {
         ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.showLanguageSwitchKey()
         ToggleKey.CLIPBOARD_HISTORY -> settings.clipboardHistoryEnabled()
         ToggleKey.NUMBER_ROW -> settings.numberRowEnabled()
-        ToggleKey.ALTERNATE_CHARACTERS -> settings.alternateCharactersEnabled()
+        ToggleKey.LONG_PRESS -> settings.longPressEnabled()
         ToggleKey.EMOJI_SHORTCUT -> settings.emojiShortcutEnabled()
     }
 
@@ -581,7 +599,7 @@ class SettingsActivity : Activity() {
             ToggleKey.SHOW_LANGUAGE_SWITCH -> settings.setShowLanguageSwitchKey(value)
             ToggleKey.CLIPBOARD_HISTORY -> settings.setClipboardHistoryEnabled(value)
             ToggleKey.NUMBER_ROW -> settings.setNumberRowEnabled(value)
-            ToggleKey.ALTERNATE_CHARACTERS -> settings.setAlternateCharactersEnabled(value)
+            ToggleKey.LONG_PRESS -> settings.setLongPressEnabled(value)
             ToggleKey.EMOJI_SHORTCUT -> settings.setEmojiShortcutEnabled(value)
         }
         notifySettingsChanged()
@@ -590,30 +608,78 @@ class SettingsActivity : Activity() {
     private fun renderKeyBehaviorControls() {
         currentCategoryId = KEY_BEHAVIOR_CONTROLS_ID
         renderedRows.clear()
-        headerTitle.text = "Key press behavior"
+        headerTitle.text = "Long Press"
         headerBack.contentDescription = "Back to Preferences"
         applyThemeToScreen()
         body.removeAllViews()
         addSectionHeader(
-            "Key press behavior",
-            "Long-press alternatives remain separate from the fast normal tap path.",
+            "Long Press",
+            "Hold a mapped key to insert its secondary character directly. No popup or second selection is used.",
         )
 
-        val currentLevel = settings.longPressDelayLevel().coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1)
+        val enabledRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(dp(8), dp(4), dp(4), dp(4))
+            isClickable = true
+            isFocusable = true
+            contentDescription = "Long Press"
+        }
+        val enabledText = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER_VERTICAL
+        }
+        enabledText.addView(label("Long Press", 16f, activeTheme.textColor))
+        enabledText.addView(
+            label(
+                "Insert the mapped secondary character after the selected delay.",
+                12f,
+                mutedColor(),
+            ),
+        )
+        enabledRow.addView(enabledText, LinearLayout.LayoutParams(0, dp(68), 1f))
+        val enabledSwitch = Switch(this).apply {
+            isChecked = settings.longPressEnabled()
+            thumbTintList = controlTint(
+                enabledChecked = activeTheme.accentColor,
+                enabledUnchecked = activeTheme.textColor,
+            )
+            trackTintList = controlTint(
+                enabledChecked = withAlpha(activeTheme.accentColor, 160),
+                enabledUnchecked = withAlpha(activeTheme.textColor, 92),
+            )
+            contentDescription = "Long Press on or off"
+            setOnCheckedChangeListener { _, checked ->
+                settings.setLongPressEnabled(checked)
+                notifySettingsChanged()
+            }
+        }
+        enabledRow.addView(enabledSwitch, LinearLayout.LayoutParams(dp(58), dp(68)))
+        enabledRow.setOnClickListener { enabledSwitch.performClick() }
+        body.addView(
+            enabledRow,
+            rowParams().apply {
+                height = dp(76)
+                bottomMargin = dp(8)
+            },
+        )
+
+        val currentLevel = settings.longPressDelayLevel()
+            .coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1)
         val valueLabel = label(
             "${KeyboardSettings.longPressDelayForLevel(currentLevel)} ms",
             18f,
             activeTheme.textColor,
         ).apply {
             gravity = Gravity.CENTER
-            contentDescription = "Long-press delay value"
+            contentDescription = "Long Press delay value"
         }
         body.addView(valueLabel, rowParams().apply { height = dp(44) })
 
         val seek = themedSeekBar().apply {
             max = KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1
             progress = currentLevel
-            contentDescription = "Long-press delay"
+            contentDescription = "Long Press delay from 100 to 700 milliseconds"
         }
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
@@ -633,18 +699,18 @@ class SettingsActivity : Activity() {
         })
         body.addView(
             label(
-                "Fast 350 ms   •   Normal 500 ms   •   Slow 700 ms   •   Extra slow 900 ms",
+                "100 ms   •   200 ms   •   300 ms   •   400 ms   •   500 ms   •   600 ms   •   700 ms",
                 12f,
                 mutedColor(),
             ).apply {
                 setPadding(dp(8), 0, dp(8), dp(12))
-                contentDescription = "Long-press presets: fast 350 milliseconds, normal 500 milliseconds, slow 700 milliseconds, extra slow 900 milliseconds"
+                contentDescription = "Long Press delay presets from 100 to 700 milliseconds"
             },
             rowParams(),
         )
         body.addView(
             label(
-                "Alphabet keys show relevant alternate characters after the selected delay. A normal tap still commits immediately.",
+                "A normal tap commits the main character immediately. Holding until the selected delay replaces it once with the mapped secondary character. Releasing does not add another character.",
                 13f,
                 mutedColor(),
             ).apply {
@@ -1013,9 +1079,8 @@ class SettingsActivity : Activity() {
             entries = listOf(
                 action("typing.appearance", "Font & Emoji Size", "Open the seven-level live controls for keyboard text and emoji.", "Preferences > Appearance", SettingAction.OPEN_APPEARANCE_CONTROLS, "font size emoji size appearance preview"),
                 toggle("typing.number_row", "Number Row", "Show 1–0 above the alphabet rows without changing the bottom row.", "Preferences > Layout", ToggleKey.NUMBER_ROW, "number row digits 1234567890 top numbers"),
-                toggle("typing.alternate_characters", "Long-press alternate characters", "Show symbol/alternate-character popups when an alphabet key is held.", "Preferences > Key press behavior", ToggleKey.ALTERNATE_CHARACTERS, "long press alternate characters popup symbols enable disable"),
-                toggle("typing.emoji_shortcut", "Long-press comma for Emoji", "Hold the comma key to reveal the Emoji shortcut without changing normal comma taps.", "Preferences > Key press behavior", ToggleKey.EMOJI_SHORTCUT, "comma emoji shortcut long press emoji popup"),
-                action("typing.long_press", "Long-press delay", "Choose Fast, Normal, Slow, or Extra Slow timing for alternate-character popups.", "Preferences > Key press behavior", SettingAction.OPEN_KEY_BEHAVIOR_CONTROLS, "long press delay alternate popup milliseconds fast normal slow"),
+                action("typing.long_press", "Long Press", "Turn Long Press on or off and choose a 100–700 ms delay. A mapped secondary character is inserted directly without a popup.", "Preferences > Long Press", SettingAction.OPEN_KEY_BEHAVIOR_CONTROLS, "long press secondary character direct insert delay 100 200 300 400 500 600 700"),
+                toggle("typing.emoji_shortcut", "Long-press comma for Emoji", "Hold the comma key to open the Emoji panel without changing normal comma taps.", "Preferences > Long Press", ToggleKey.EMOJI_SHORTCUT, "comma emoji shortcut long press emoji"),
                 info("typing.fast", "Typing responsiveness", "Keys respond immediately during normal typing.", "Preferences > Key press behavior", "key press behavior latency"),
                 info("typing.shift", "Shift and Caps Lock", "One-shot Shift and Caps Lock are supported.", "Preferences > Shift", "shift caps lock"),
                 info("typing.symbols", "Numbers and symbols", "The keyboard includes punctuation and symbol layouts.", "Preferences > Symbols", "numbers symbols punctuation"),
@@ -1250,7 +1315,7 @@ class SettingsActivity : Activity() {
     )
 
     private enum class EntryType { INFO, ACTION, TOGGLE, PLACEHOLDER }
-    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH, CLIPBOARD_HISTORY, NUMBER_ROW, ALTERNATE_CHARACTERS, EMOJI_SHORTCUT }
+    private enum class ToggleKey { PERSONALIZED_SUGGESTIONS, GLIDE_TYPING, SHOW_LANGUAGE_SWITCH, CLIPBOARD_HISTORY, NUMBER_ROW, LONG_PRESS, EMOJI_SHORTCUT }
     private enum class ClipboardClearScope { RECENT, PINNED, ALL }
     private enum class SettingAction {
         OPEN_THEMES,

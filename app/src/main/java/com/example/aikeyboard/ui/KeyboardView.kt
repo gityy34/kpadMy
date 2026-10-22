@@ -55,9 +55,9 @@ class KeyboardView(
     private val showLanguageSwitch: () -> Boolean = { false },
     private val showNumberRow: () -> Boolean = { false },
     private val longPressDelayMillis: () -> Long = { DEFAULT_LONG_PRESS_DELAY_MS },
-    private val longPressAlternatesEnabled: () -> Boolean = { true },
+    private val longPressEnabled: () -> Boolean = { true },
     private val emojiShortcutEnabled: () -> Boolean = { true },
-    private val onLongPressAlternateSelected: (String) -> Unit = {},
+    private val onLongPressAlternateTriggered: (String) -> Unit = {},
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -121,18 +121,15 @@ class KeyboardView(
         if (pointerId == TouchTracker.INVALID_POINTER_ID ||
             key?.type != KeyType.CHARACTER ||
             !hasLongPressAlternates(key) ||
+            longPressCancelled ||
+            longPressTriggered ||
             !touchTracker.owns(pointerId)
         ) return@Runnable
 
-        alternatePopupVisible = true
-        alternatePopupOptions = key.alternateTexts
-        alternatePopupSelected = -1
-        val metrics = rowMetrics.getOrNull(pressedRow)
-        if (metrics != null && pressedColumn in metrics.left.indices) {
-            alternatePopupAnchorX = (metrics.left[pressedColumn] + metrics.right[pressedColumn]) / 2f
-            alternatePopupAnchorY = metrics.top
-            alternatePopupAnchorBottomY = metrics.bottom
-        }
+        // The main character was committed on ACTION_DOWN for responsive normal typing.
+        // Replace it exactly once when the configured threshold is reached; no popup is shown.
+        longPressTriggered = true
+        onLongPressAlternateTriggered(key.alternateTexts.first())
         invalidate()
     }
 
@@ -140,13 +137,10 @@ class KeyboardView(
     private var lastBaseLayout: KeyboardLayout = keyboardLayout
     private var lastLanguageSwitchVisible = false
     private var lastNumberRowVisible = false
-    private var alternatePopupVisible = false
-    private var alternatePopupOptions: List<String> = emptyList()
-    private var alternatePopupSelected = -1
-    private var alternatePopupAnchorX = 0f
-    private var alternatePopupAnchorY = 0f
-    private var alternatePopupAnchorBottomY = 0f
-    private val alternatePopupRect = RectF()
+    private var longPressTriggered = false
+    private var longPressCancelled = false
+    private var longPressDownX = 0f
+    private var longPressDownY = 0f
     private var rowMetrics: Array<RowMetrics> = emptyArray()
     private var pressedRow = -1
     private var pressedColumn = -1
@@ -317,7 +311,6 @@ class KeyboardView(
                 }
             }
         }
-        drawAlternatePopup(canvas)
     }
 
     override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
@@ -343,12 +336,8 @@ class KeyboardView(
                 val hit = findKey(event.x, event.y)
                 touchTracker.start(event.getPointerId(0), hit)
                 if (hit != null) {
-                    if (hasLongPressAlternates(hit)) {
-                        repeatHandler.postDelayed(
-                            alternateLongPressRunnable,
-                            longPressDelayMillis().coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS),
-                        )
-                    }
+                    longPressDownX = event.x
+                    longPressDownY = event.y
                     if (glideEnabled() && isGlideKey(hit)) {
                         glideEligible = true
                         glideProvisionalText = hit.textFor(state.shiftActive())
@@ -365,6 +354,14 @@ class KeyboardView(
                         true
                     } else {
                         onKeyPressed(hit)
+                    }
+                    // Only schedule replacement after the main character was successfully
+                    // committed. This prevents a stale hold from deleting unrelated text.
+                    if (committed && hasLongPressAlternates(hit)) {
+                        repeatHandler.postDelayed(
+                            alternateLongPressRunnable,
+                            longPressDelayMillis().coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS),
+                        )
                     }
                     // State changes such as one-shot Shift consumption and mode switching must
                     // be reflected without making the next key wait for a later event.
@@ -400,19 +397,37 @@ class KeyboardView(
                     event.findPointerIndex(touchTracker.activePointerId) < 0
                 ) {
                     clearPressedState()
-                } else if (alternatePopupVisible) {
+                } else {
                     val index = event.findPointerIndex(touchTracker.activePointerId)
-                    if (index >= 0) updateAlternatePopupSelection(event.getX(index), event.getY(index))
-                } else if (spaceCommitted || spaceCursorActive) {
-                    val index = event.findPointerIndex(touchTracker.activePointerId)
-                    if (index >= 0) updateSpaceCursor(event.getX(index), event.getY(index))
-                } else if (touchTracker.pressedKey?.type == KeyType.BACKSPACE) {
-                    val index = event.findPointerIndex(touchTracker.activePointerId)
-                    if (index >= 0) updateBackspaceSwipe(event.getX(index), event.getY(index))
-                } else if (glideEligible) {
-                    val index = event.findPointerIndex(touchTracker.activePointerId)
-                    if (index >= 0) updateGlidePath(event.getX(index), event.getY(index))
-                }
+                    if (index >= 0 && !longPressTriggered && !longPressCancelled) {
+                        val movedX = event.getX(index)
+                        val movedY = event.getY(index)
+                        if (hypot(movedX - longPressDownX, movedY - longPressDownY) >
+                            LONG_PRESS_MOVE_TOLERANCE_DP * density
+                        ) {
+                            repeatHandler.removeCallbacks(alternateLongPressRunnable)
+                            longPressCancelled = true
+                        }
+                    }
+                    if (longPressTriggered) {
+                        // A consumed Long Press owns this gesture; movement cannot create a
+                        // second symbol or start Glide from the same finger hold.
+                    } else if (spaceCommitted || spaceCursorActive) {
+                        val index = event.findPointerIndex(touchTracker.activePointerId)
+                        if (index >= 0) {
+                            updateSpaceCursor(event.getX(index), event.getY(index))
+                        }
+                    } else if (touchTracker.pressedKey?.type == KeyType.BACKSPACE) {
+                        val index = event.findPointerIndex(touchTracker.activePointerId)
+                        if (index >= 0) {
+                            updateBackspaceSwipe(event.getX(index), event.getY(index))
+                        }
+                    } else if (glideEligible) {
+                        val index = event.findPointerIndex(touchTracker.activePointerId)
+                        if (index >= 0) {
+                            updateGlidePath(event.getX(index), event.getY(index))
+                        }
+                    }
                 return true
             }
 
@@ -426,13 +441,6 @@ class KeyboardView(
 
             MotionEvent.ACTION_UP -> {
                 if (touchTracker.owns(event.getPointerId(event.actionIndex))) {
-                    if (alternatePopupVisible) {
-                        val selected = alternatePopupOptions.getOrNull(alternatePopupSelected)
-                        if (!selected.isNullOrEmpty()) onLongPressAlternateSelected(selected)
-                        clearPressedState()
-                        performClick()
-                        return true
-                    }
                     if (glideActive) notifyGlideCompleted()
                     val pressedKey = touchTracker.pressedKey
                     if (backspaceSwipeActive) {
@@ -751,21 +759,8 @@ class KeyboardView(
         return if (key.outputText == "," || key.outputText == "،") {
             emojiShortcutEnabled()
         } else {
-            longPressAlternatesEnabled()
+            longPressEnabled()
         }
-    }
-
-    private fun updateAlternatePopupSelection(x: Float, y: Float) {
-        if (!alternatePopupRect.contains(x, y)) {
-            alternatePopupSelected = -1
-            invalidate()
-            return
-        }
-        val cellWidth = alternatePopupRect.width() / alternatePopupOptions.size.coerceAtLeast(1)
-        alternatePopupSelected = ((x - alternatePopupRect.left) / cellWidth)
-            .toInt()
-            .coerceIn(0, alternatePopupOptions.lastIndex)
-        invalidate()
     }
 
     private fun drawAlternateHint(
@@ -788,53 +783,6 @@ class KeyboardView(
             textPaint,
         )
         textPaint.textAlign = Paint.Align.LEFT
-    }
-
-    private fun drawAlternatePopup(canvas: Canvas) {
-        if (!alternatePopupVisible || alternatePopupOptions.isEmpty()) return
-        val cellWidth = POPUP_CELL_WIDTH_DP * density
-        val popupHeight = POPUP_HEIGHT_DP * density
-        val popupWidth = cellWidth * alternatePopupOptions.size
-        val left = (alternatePopupAnchorX - popupWidth / 2f)
-            .coerceIn(0f, (width - popupWidth).coerceAtLeast(0f))
-        val gap = POPUP_GAP_DP * density
-        val preferredTop = alternatePopupAnchorY - popupHeight - gap
-        val belowTop = alternatePopupAnchorBottomY + gap
-        val top = when {
-            preferredTop >= 0f -> preferredTop
-            belowTop + popupHeight <= height -> belowTop
-            else -> 0f
-        }.coerceIn(0f, (height - popupHeight).coerceAtLeast(0f))
-        alternatePopupRect.set(left, top, left + popupWidth, top + popupHeight)
-        keyPaint.style = Paint.Style.FILL
-        keyPaint.color = theme.keyColor
-        canvas.drawRoundRect(alternatePopupRect, cornerRadius * 1.5f, cornerRadius * 1.5f, keyPaint)
-        keyPaint.style = Paint.Style.STROKE
-        keyPaint.strokeWidth = density
-        keyPaint.color = theme.borderColor
-        canvas.drawRoundRect(alternatePopupRect, cornerRadius * 1.5f, cornerRadius * 1.5f, keyPaint)
-        keyPaint.style = Paint.Style.FILL
-        alternatePopupOptions.forEachIndexed { index, option ->
-            val cellLeft = left + index * cellWidth
-            if (index == alternatePopupSelected) {
-                keyPaint.color = theme.pressedKeyColor
-                canvas.drawRoundRect(
-                    cellLeft + density,
-                    top + density,
-                    cellLeft + cellWidth - density,
-                    top + popupHeight - density,
-                    cornerRadius,
-                    cornerRadius,
-                    keyPaint,
-                )
-            }
-            textPaint.color = theme.textColor
-            textPaint.textSize = POPUP_TEXT_SIZE_SP * scaledDensity
-            textPaint.getFontMetrics(fontMetrics)
-            val baseline = top + (popupHeight - fontMetrics.ascent - fontMetrics.descent) / 2f
-            val textWidth = textPaint.measureText(option)
-            canvas.drawText(option, cellLeft + (cellWidth - textWidth) / 2f, baseline, textPaint)
-        }
     }
 
     private fun drawLanguageSwitchIcon(canvas: Canvas, centerX: Float, centerY: Float) {
@@ -874,9 +822,7 @@ class KeyboardView(
             distinctGlideKeyCount() >= 2
         ) {
             repeatHandler.removeCallbacks(alternateLongPressRunnable)
-            alternatePopupVisible = false
-            alternatePopupOptions = emptyList()
-            alternatePopupSelected = -1
+            // Glide takes ownership only after movement has already cancelled Long Press.
             glideActive = true
         }
         if (glideActive) invalidate()
@@ -978,11 +924,10 @@ class KeyboardView(
         repeatHandler.removeCallbacks(repeatRunnable)
         repeatHandler.removeCallbacks(spaceLongPressRunnable)
         repeatHandler.removeCallbacks(alternateLongPressRunnable)
-        alternatePopupVisible = false
-        alternatePopupOptions = emptyList()
-        alternatePopupSelected = -1
-        alternatePopupRect.setEmpty()
-        alternatePopupAnchorBottomY = 0f
+        longPressTriggered = false
+        longPressCancelled = false
+        longPressDownX = 0f
+        longPressDownY = 0f
         if (backspaceSwipeActive) {
             backspaceSwipeActive = false
             onBackspaceSwipeCancelled()
@@ -1163,16 +1108,13 @@ class KeyboardView(
         const val MODE_LABEL_TEXT_SIZE_SP = 19f
         const val SPACE_LABEL_TEXT_SIZE_SP = 20f
         const val SHIFT_ICON_TEXT_SIZE_SP = 34f
-        const val POPUP_TEXT_SIZE_SP = 24f
         const val ALTERNATE_HINT_TEXT_SIZE_SP = 11f
         const val ALTERNATE_HINT_TOP_PADDING_DP = 3f
         const val ALTERNATE_HINT_RIGHT_PADDING_DP = 4f
-        const val POPUP_CELL_WIDTH_DP = 44f
-        const val POPUP_HEIGHT_DP = 58f
-        const val POPUP_GAP_DP = 3f
-        const val DEFAULT_LONG_PRESS_DELAY_MS = 500L
-        const val MIN_LONG_PRESS_DELAY_MS = 250L
-        const val MAX_LONG_PRESS_DELAY_MS = 1200L
+        const val DEFAULT_LONG_PRESS_DELAY_MS = 300L
+        const val MIN_LONG_PRESS_DELAY_MS = 100L
+        const val MAX_LONG_PRESS_DELAY_MS = 700L
+        const val LONG_PRESS_MOVE_TOLERANCE_DP = 12f
         val BACKGROUND_COLOR = Color.rgb(243, 244, 246)
         val KEY_COLOR = Color.WHITE
         val SPECIAL_KEY_COLOR = Color.rgb(221, 227, 244)

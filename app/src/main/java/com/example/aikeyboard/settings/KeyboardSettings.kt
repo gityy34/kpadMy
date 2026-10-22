@@ -64,9 +64,14 @@ interface KeyboardSettings {
 
     fun setLongPressDelayLevel(level: Int) = Unit
 
+    /** Backward-compatible storage API for the unified Long Press setting. */
     fun alternateCharactersEnabled(): Boolean = true
 
     fun setAlternateCharactersEnabled(enabled: Boolean) = Unit
+
+    fun longPressEnabled(): Boolean = alternateCharactersEnabled()
+
+    fun setLongPressEnabled(enabled: Boolean) = setAlternateCharactersEnabled(enabled)
 
     fun emojiShortcutEnabled(): Boolean = true
 
@@ -99,9 +104,9 @@ interface KeyboardSettings {
         const val SIZE_LEVEL_COUNT = 7
         const val DEFAULT_FONT_SIZE_LEVEL = 3
         const val DEFAULT_EMOJI_SIZE_LEVEL = 3
-        const val LONG_PRESS_DELAY_LEVEL_COUNT = 4
-        const val DEFAULT_LONG_PRESS_DELAY_LEVEL = 1
-        val LONG_PRESS_DELAY_MILLIS = longArrayOf(350L, 500L, 700L, 900L)
+        const val LONG_PRESS_DELAY_LEVEL_COUNT = 7
+        const val DEFAULT_LONG_PRESS_DELAY_LEVEL = 2
+        val LONG_PRESS_DELAY_MILLIS = longArrayOf(100L, 200L, 300L, 400L, 500L, 600L, 700L)
         val DEFAULT_TOOLBAR_ORDER = listOf("settings", "search", "resize")
         val SUPPORTED_TOOLBAR_ITEMS = listOf(
             "settings", "search", "resize", "language", "themes", "emoji", "clipboard", "undo", "redo",
@@ -185,17 +190,41 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         preferences.edit().putBoolean(KEY_NUMBER_ROW_ENABLED, enabled).apply()
     }
 
-    override fun longPressDelayLevel(): Int =
-        preferences.getInt(
+    override fun longPressDelayLevel(): Int {
+        val stored = preferences.getInt(
             KEY_LONG_PRESS_DELAY_LEVEL,
             KeyboardSettings.DEFAULT_LONG_PRESS_DELAY_LEVEL,
-        ).coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1)
+        )
+        val format = preferences.getInt(KEY_LONG_PRESS_DELAY_FORMAT_VERSION, 0)
+        if (format >= LONG_PRESS_DELAY_FORMAT_VERSION ||
+            !preferences.contains(KEY_LONG_PRESS_DELAY_LEVEL)
+        ) {
+            return stored.coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1)
+        }
+
+        // Preserve the closest meaning for users upgrading from the old 350/500/700/900 ms
+        // presets rather than silently changing their selected timing.
+        val migrated = when (stored) {
+            0 -> 3 // 350 ms -> 400 ms
+            1 -> 4 // 500 ms -> 500 ms
+            2 -> 6 // 700 ms -> 700 ms
+            else -> 6 // 900 ms -> the new maximum of 700 ms
+        }
+        preferences.edit()
+            .putInt(KEY_LONG_PRESS_DELAY_LEVEL, migrated)
+            .putInt(KEY_LONG_PRESS_DELAY_FORMAT_VERSION, LONG_PRESS_DELAY_FORMAT_VERSION)
+            .apply()
+        return migrated
+    }
 
     override fun setLongPressDelayLevel(level: Int) {
-        preferences.edit().putInt(
-            KEY_LONG_PRESS_DELAY_LEVEL,
-            level.coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1),
-        ).apply()
+        preferences.edit()
+            .putInt(
+                KEY_LONG_PRESS_DELAY_LEVEL,
+                level.coerceIn(0, KeyboardSettings.LONG_PRESS_DELAY_LEVEL_COUNT - 1),
+            )
+            .putInt(KEY_LONG_PRESS_DELAY_FORMAT_VERSION, LONG_PRESS_DELAY_FORMAT_VERSION)
+            .apply()
     }
 
     override fun alternateCharactersEnabled(): Boolean =
@@ -286,6 +315,8 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         private const val KEY_SHOW_LANGUAGE_SWITCH = "show_language_switch_key"
         private const val KEY_NUMBER_ROW_ENABLED = "number_row_enabled"
         private const val KEY_LONG_PRESS_DELAY_LEVEL = "long_press_delay_level"
+        private const val KEY_LONG_PRESS_DELAY_FORMAT_VERSION = "long_press_delay_format_version"
+        private const val LONG_PRESS_DELAY_FORMAT_VERSION = 1
         private const val KEY_ALTERNATE_CHARACTERS_ENABLED = "alternate_characters_enabled"
         private const val KEY_EMOJI_SHORTCUT_ENABLED = "emoji_shortcut_enabled"
         private const val KEY_CLIPBOARD_HISTORY_ENABLED = "clipboard_history_enabled"

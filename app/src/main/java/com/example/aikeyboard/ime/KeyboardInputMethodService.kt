@@ -305,9 +305,9 @@ class KeyboardInputMethodService : InputMethodService() {
             longPressDelayMillis = {
                 KeyboardSettings.longPressDelayForLevel(keyboardSettings.longPressDelayLevel())
             },
-            longPressAlternatesEnabled = { keyboardSettings.alternateCharactersEnabled() },
+            longPressEnabled = { keyboardSettings.longPressEnabled() },
             emojiShortcutEnabled = { keyboardSettings.emojiShortcutEnabled() },
-            onLongPressAlternateSelected = ::onLongPressAlternateSelected,
+            onLongPressAlternateTriggered = ::onLongPressAlternateTriggered,
         )
         keyboardView = view
         view.applyTheme(activeTheme)
@@ -583,7 +583,7 @@ class KeyboardInputMethodService : InputMethodService() {
         }
     }
 
-    private fun onLongPressAlternateSelected(text: String) {
+    private fun onLongPressAlternateTriggered(text: String) {
         if (text == "🙂" && keyboardSettings.emojiShortcutEnabled()) {
             removeCommittedCommaForEmojiShortcut()
             showEmoji()
