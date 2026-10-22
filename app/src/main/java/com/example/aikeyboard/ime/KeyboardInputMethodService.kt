@@ -210,9 +210,6 @@ class KeyboardInputMethodService : InputMethodService() {
             onCandidateSelected = ::onSuggestionSelected,
             onCandidateLongPressed = ::onSuggestionLongPressed,
             onOrderChanged = keyboardSettings::setToolbarOrder,
-            fontScale = {
-                KeyboardSettings.fontScaleForLevel(keyboardSettings.fontSizeLevel())
-            },
         )
         toolbarView = toolbar
         toolbar.applyTheme(activeTheme)

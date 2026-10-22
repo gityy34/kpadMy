@@ -31,7 +31,6 @@ class KeyboardToolbarView(
     private val onCandidateLongPressed: (SuggestionCandidate) -> Unit,
     private val onOrderChanged: (List<String>) -> Unit,
     suggestionSlotCount: Int = 3,
-    private val fontScale: () -> Float = { 1f },
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
@@ -454,7 +453,9 @@ class KeyboardToolbarView(
         val fitted = SuggestionDisplay.fit(
             fullText = value,
             availableWidthPx = available.toFloat(),
-            baseTextSizePx = 23f * fontScale().coerceIn(0.75f, 1.35f) * scaledDensity,
+            // Suggestions intentionally keep their own sizing logic. Keyboard Font Size controls
+            // key labels only and must not change the toolbar candidate text.
+            baseTextSizePx = 23f * scaledDensity,
             scaledDensity = scaledDensity,
             textPaint = textPaint,
         )

@@ -734,9 +734,9 @@ class SettingsActivity : Activity() {
         )
         addSizeControl(
             title = "Font size",
-            description = "Keyboard labels and suggestion text",
+            description = "Keyboard key labels only; suggestion text keeps its own size.",
             initialLevel = settings.fontSizeLevel(),
-            preview = { level -> "Tt  Aa  123  " + (level + 1) + "/" + SIZE_LEVEL_COUNT },
+            preview = { "Aa 123" },
             scale = { level -> KeyboardSettings.fontScaleForLevel(level) },
             onLevelChanged = { level ->
                 settings.setFontSizeLevel(level)
@@ -765,6 +765,7 @@ class SettingsActivity : Activity() {
         scale: (Int) -> Float,
         onLevelChanged: (Int) -> Unit,
     ) {
+        val isFontControl = title == "Font size"
         val card = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(dp(14), dp(12), dp(14), dp(12))
@@ -774,33 +775,73 @@ class SettingsActivity : Activity() {
         card.addView(label(description, 12f, mutedColor()).apply {
             setPadding(0, dp(2), 0, dp(8))
         })
-        val previewLabel = label(preview(initialLevel), 22f, activeTheme.textColor).apply {
+
+        val safeInitialLevel = initialLevel.coerceIn(0, SIZE_LEVEL_COUNT - 1)
+        val valueLabel = if (isFontControl) {
+            label(fontPercentage(scale(safeInitialLevel)), 14f, activeTheme.accentColor).apply {
+                contentDescription = "Current keyboard font size"
+            }
+        } else {
+            null
+        }
+        valueLabel?.let { card.addView(it) }
+
+        val previewLabel = label(preview(safeInitialLevel), 22f, activeTheme.textColor).apply {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(4), dp(6), dp(4), dp(8))
+            contentDescription = if (isFontControl) {
+                "Live keyboard text preview"
+            } else {
+                "Live emoji preview"
+            }
         }
-        previewLabel.textSize = if (title == "Emoji size") {
-            25f * scale(initialLevel)
+        if (isFontControl) {
+            previewLabel.textSize = 22f * scale(safeInitialLevel)
+            val previewRow = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            previewRow.addView(
+                label("Tt", 13f, mutedColor()).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(dp(34), dp(48)),
+            )
+            previewRow.addView(
+                previewLabel,
+                LinearLayout.LayoutParams(0, dp(48), 1f),
+            )
+            previewRow.addView(
+                label("Tt", 29f, activeTheme.textColor).apply { gravity = Gravity.CENTER },
+                LinearLayout.LayoutParams(dp(34), dp(48)),
+            )
+            card.addView(previewRow)
         } else {
-            22f * scale(initialLevel)
+            previewLabel.textSize = 25f * scale(safeInitialLevel)
+            card.addView(previewLabel, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                dp(48),
+            ))
         }
-        card.addView(previewLabel, LinearLayout.LayoutParams(
-            LinearLayout.LayoutParams.MATCH_PARENT,
-            dp(48),
-        ))
+
         val seek = themedSeekBar().apply {
             max = SIZE_LEVEL_COUNT - 1
-            progress = initialLevel.coerceIn(0, max)
-            contentDescription = title
+            progress = safeInitialLevel
+            contentDescription = if (isFontControl) {
+                "Keyboard font size from 70 to 130 percent"
+            } else {
+                title
+            }
         }
         seek.setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
             override fun onProgressChanged(bar: SeekBar?, value: Int, fromUser: Boolean) {
-                previewLabel.text = preview(value)
-                previewLabel.textSize = if (title == "Emoji size") {
-                    25f * scale(value)
+                val safeValue = value.coerceIn(0, SIZE_LEVEL_COUNT - 1)
+                previewLabel.text = preview(safeValue)
+                if (isFontControl) {
+                    valueLabel?.text = fontPercentage(scale(safeValue))
+                    previewLabel.textSize = 22f * scale(safeValue)
                 } else {
-                    22f * scale(value)
+                    previewLabel.textSize = 25f * scale(safeValue)
                 }
-                if (fromUser) onLevelChanged(value)
+                if (fromUser) onLevelChanged(safeValue)
             }
 
             override fun onStartTrackingTouch(bar: SeekBar?) = Unit
@@ -812,6 +853,9 @@ class SettingsActivity : Activity() {
         ))
         body.addView(card, rowParams())
     }
+
+    private fun fontPercentage(scale: Float): String =
+        "${kotlin.math.round(scale * 100f).toInt()}%"
 
     private fun notifySettingsChanged() {
         sendBroadcast(Intent(KeyboardSettings.ACTION_SETTINGS_CHANGED).setPackage(packageName))

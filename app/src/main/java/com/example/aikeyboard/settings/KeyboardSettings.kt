@@ -112,7 +112,10 @@ interface KeyboardSettings {
             "settings", "search", "resize", "language", "themes", "emoji", "clipboard", "undo", "redo",
         )
 
-        val FONT_SIZE_SCALES = floatArrayOf(0.85f, 0.9f, 0.95f, 1f, 1.08f, 1.18f, 1.28f)
+        // Seven stable levels. Level 3 remains the existing/default keyboard size (100%).
+        // The range is intentionally limited so labels remain readable without changing key
+        // geometry or touch targets.
+        val FONT_SIZE_SCALES = floatArrayOf(0.70f, 0.80f, 0.90f, 1.00f, 1.10f, 1.20f, 1.30f)
         val EMOJI_SIZE_SCALES = floatArrayOf(0.78f, 0.86f, 0.94f, 1f, 1.08f, 1.18f, 1.28f)
         const val ACTION_SETTINGS_CHANGED = "com.example.aikeyboard.SETTINGS_CHANGED"
 

@@ -569,8 +569,12 @@ class KeyboardView(
         right: Float,
         rowHeightPx: Float,
     ): Float {
-        val base = keyTextSizeSp(key, rowHeightPx) *
-            fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE) * scaledDensity
+        val textScale = if (scalesWithKeyboardFont(key)) {
+            fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)
+        } else {
+            1f
+        }
+        val base = keyTextSizeSp(key, rowHeightPx) * textScale * scaledDensity
         if (label.isEmpty()) return base
 
         // Fit every label, not only the space label. This keeps ABC, !?#, =<\\ and
@@ -592,6 +596,12 @@ class KeyboardView(
         }
         return size
     }
+
+    private fun scalesWithKeyboardFont(key: KeySpec): Boolean =
+        key.type != KeyType.SHIFT &&
+            key.type != KeyType.BACKSPACE &&
+            key.type != KeyType.ENTER &&
+            key.type != KeyType.LANGUAGE_SWITCH
 
     private fun keyTextSizeSp(key: KeySpec, rowHeightPx: Float): Float {
         val baseRowHeightDp = if (
@@ -772,7 +782,12 @@ class KeyboardView(
         rowTop: Float,
     ) {
         textPaint.color = theme.textColor
-        textPaint.textSize = ALTERNATE_HINT_TEXT_SIZE_SP * scaledDensity
+        val hintScale = if (alternate == "🙂") {
+            1f
+        } else {
+            fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)
+        }
+        textPaint.textSize = ALTERNATE_HINT_TEXT_SIZE_SP * hintScale * scaledDensity
         textPaint.textAlign = Paint.Align.RIGHT
         textPaint.getFontMetrics(fontMetrics)
         val baseline = rowTop + keyInset + ALTERNATE_HINT_TOP_PADDING_DP * density -
@@ -1095,8 +1110,8 @@ class KeyboardView(
         const val MAX_BOTTOM_ROW_HEIGHT_DP = 92f
         const val MIN_LABEL_SCALE = 0.9f
         const val MAX_LABEL_SCALE = 1.25f
-        const val MIN_FONT_SCALE = 0.75f
-        const val MAX_FONT_SCALE = 1.35f
+        const val MIN_FONT_SCALE = 0.70f
+        const val MAX_FONT_SCALE = 1.30f
         const val SHIFT_KEY_WIDTH_DP = 48f
         const val BACKSPACE_KEY_WIDTH_DP = 49f
         const val SPACE_KEY_WIDTH_DP = 138f
