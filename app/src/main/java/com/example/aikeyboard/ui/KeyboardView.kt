@@ -51,7 +51,7 @@ class KeyboardView(
     private val onBackspaceSwipeMoved: (Float) -> Unit = {},
     private val onBackspaceSwipeFinished: () -> Unit = {},
     private val onBackspaceSwipeCancelled: () -> Unit = {},
-    private val fontScale: () -> Float = { 1f },
+    private val initialFontScale: Float = 1f,
     private val showLanguageSwitch: () -> Boolean = { false },
     private val showNumberRow: () -> Boolean = { false },
     private val longPressDelayMillis: () -> Long = { DEFAULT_LONG_PRESS_DELAY_MS },
@@ -61,6 +61,10 @@ class KeyboardView(
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
+    // This is the single scale used by every text-based key label and alternate hint. It is
+    // updated explicitly when Settings changes so the active IME cannot retain a stale callback
+    // value or fall back to the constructor default.
+    private var appliedFontScale = initialFontScale.coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)
     private val scaledDensity = resources.displayMetrics.scaledDensity
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fontMetrics = Paint.FontMetrics()
@@ -476,6 +480,18 @@ class KeyboardView(
         clearPressedState()
     }
 
+    /**
+     * Applies the persisted keyboard font scale to the already-visible IME.
+     *
+     * The scale affects text glyphs only; key geometry and icon glyph sizes remain unchanged.
+     */
+    fun setKeyboardFontScale(scale: Float) {
+        val resolved = scale.coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)
+        if (appliedFontScale == resolved) return
+        appliedFontScale = resolved
+        invalidate()
+    }
+
     fun currentGlideGeometry(): List<GlideKeyGeometry> = glideGeometry
 
     fun currentRowCount(): Int {
@@ -570,7 +586,7 @@ class KeyboardView(
         rowHeightPx: Float,
     ): Float {
         val textScale = if (scalesWithKeyboardFont(key)) {
-            fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)
+            appliedFontScale
         } else {
             1f
         }
@@ -785,7 +801,7 @@ class KeyboardView(
         val hintScale = if (alternate == "🙂") {
             1f
         } else {
-            fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)
+            appliedFontScale
         }
         textPaint.textSize = ALTERNATE_HINT_TEXT_SIZE_SP * hintScale * scaledDensity
         textPaint.textAlign = Paint.Align.RIGHT

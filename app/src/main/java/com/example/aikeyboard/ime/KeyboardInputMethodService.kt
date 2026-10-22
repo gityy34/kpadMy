@@ -136,6 +136,9 @@ class KeyboardInputMethodService : InputMethodService() {
     private val settingsReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             glideTypingEnabled = keyboardSettings.glideTypingEnabled()
+            keyboardView?.setKeyboardFontScale(
+                KeyboardSettings.fontScaleForLevel(keyboardSettings.fontSizeLevel()),
+            )
             keyboardView?.requestLayout()
             keyboardView?.invalidate()
             // Suggestions render inside the toolbar; invalidate it as well so font-size
@@ -294,9 +297,7 @@ class KeyboardInputMethodService : InputMethodService() {
             onBackspaceSwipeMoved = ::onBackspaceSwipeMoved,
             onBackspaceSwipeFinished = ::onBackspaceSwipeFinished,
             onBackspaceSwipeCancelled = ::onBackspaceSwipeCancelled,
-            fontScale = {
-                KeyboardSettings.fontScaleForLevel(keyboardSettings.fontSizeLevel())
-            },
+            initialFontScale = KeyboardSettings.fontScaleForLevel(keyboardSettings.fontSizeLevel()),
             showLanguageSwitch = { keyboardSettings.showLanguageSwitchKey() },
             showNumberRow = { keyboardSettings.numberRowEnabled() },
             longPressDelayMillis = {
