@@ -623,22 +623,6 @@ class KeyboardInputMethodService : InputMethodService() {
         }
     }
 
-        val connection = currentInputConnection ?: return
-        val beforeCursor = connection.getTextBeforeCursor(2, 0)?.toString().orEmpty()
-        if (beforeCursor.isEmpty()) return
-        val codePoint = beforeCursor.codePointBefore(beforeCursor.length)
-        val deleteLength = Character.charCount(codePoint)
-        fastHistorySnapshot = null
-        val beforeEdit = editHistory.capture(connection)
-        val committed = withInternalEdit {
-            connection.deleteSurroundingText(deleteLength, 0) && connection.commitText(text, 1)
-        }
-        if (committed) {
-            editHistory.record(beforeEdit, editHistory.capture(connection))
-            requestCompositionSnapshot()
-        }
-    }
-
     private fun onSuggestionSelected(candidate: SuggestionCandidate) {
         if (contentMode != ContentMode.KEYBOARD) return
         val snapshot = latestCompositionSnapshot ?: return
