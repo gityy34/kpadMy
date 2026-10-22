@@ -306,6 +306,7 @@ class KeyboardInputMethodService : InputMethodService() {
                 KeyboardSettings.longPressDelayForLevel(keyboardSettings.longPressDelayLevel())
             },
             longPressAlternatesEnabled = { keyboardSettings.alternateCharactersEnabled() },
+            emojiShortcutEnabled = { keyboardSettings.emojiShortcutEnabled() },
             onLongPressAlternateSelected = ::onLongPressAlternateSelected,
         )
         keyboardView = view
@@ -583,6 +584,45 @@ class KeyboardInputMethodService : InputMethodService() {
     }
 
     private fun onLongPressAlternateSelected(text: String) {
+        if (text == "🙂" && keyboardSettings.emojiShortcutEnabled()) {
+            removeCommittedCommaForEmojiShortcut()
+            showEmoji()
+            return
+        }
+        val connection = currentInputConnection ?: return
+        val beforeCursor = connection.getTextBeforeCursor(2, 0)?.toString().orEmpty()
+        if (beforeCursor.isEmpty()) return
+        val codePoint = beforeCursor.codePointBefore(beforeCursor.length)
+        val deleteLength = Character.charCount(codePoint)
+        fastHistorySnapshot = null
+        val beforeEdit = editHistory.capture(connection)
+        val committed = withInternalEdit {
+            connection.deleteSurroundingText(deleteLength, 0) && connection.commitText(text, 1)
+        }
+        if (committed) {
+            editHistory.record(beforeEdit, editHistory.capture(connection))
+            requestCompositionSnapshot()
+        }
+    }
+
+    private fun removeCommittedCommaForEmojiShortcut() {
+        val connection = currentInputConnection ?: return
+        val before = connection.getTextBeforeCursor(2, 0)?.toString().orEmpty()
+        if (before.isEmpty()) return
+        val codePoint = before.codePointBefore(before.length)
+        if (codePoint != ','.code && codePoint != '،'.code) return
+        val deleteLength = Character.charCount(codePoint)
+        fastHistorySnapshot = null
+        val beforeEdit = editHistory.capture(connection)
+        val deleted = withInternalEdit {
+            connection.deleteSurroundingText(deleteLength, 0)
+        }
+        if (deleted) {
+            editHistory.record(beforeEdit, editHistory.capture(connection))
+            requestCompositionSnapshot()
+        }
+    }
+
         val connection = currentInputConnection ?: return
         val beforeCursor = connection.getTextBeforeCursor(2, 0)?.toString().orEmpty()
         if (beforeCursor.isEmpty()) return
