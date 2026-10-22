@@ -12,6 +12,7 @@ import android.graphics.Shader
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import com.example.aikeyboard.core.KeySpec
@@ -55,6 +56,7 @@ class KeyboardView(
     private val showNumberRow: () -> Boolean = { false },
     private val longPressDelayMillis: () -> Long = { DEFAULT_LONG_PRESS_DELAY_MS },
     private val longPressAlternatesEnabled: () -> Boolean = { true },
+    private val emojiShortcutEnabled: () -> Boolean = { true },
     private val onLongPressAlternateSelected: (String) -> Unit = {},
 ) : View(context) {
 
@@ -118,8 +120,7 @@ class KeyboardView(
         val pointerId = touchTracker.activePointerId
         if (pointerId == TouchTracker.INVALID_POINTER_ID ||
             key?.type != KeyType.CHARACTER ||
-            key.alternateTexts.isEmpty() ||
-            !longPressAlternatesEnabled() ||
+            !hasLongPressAlternates(key) ||
             !touchTracker.owns(pointerId)
         ) return@Runnable
 
@@ -286,15 +287,25 @@ class KeyboardView(
                 textPaint.getFontMetrics(fontMetrics)
                 val baseline = (metrics.top + metrics.bottom - fontMetrics.ascent - fontMetrics.descent) / 2f
                 canvas.drawText(label, (left + right - textWidth) / 2f, baseline, textPaint)
-                if (longPressAlternatesEnabled() &&
-                    key.type == KeyType.CHARACTER &&
-                    key.alternateTexts.isNotEmpty()
-                ) {
+                if (hasLongPressAlternates(key)) {
                     drawAlternateHint(canvas, key.alternateTexts.first(), left, right, metrics.top)
                 }
             }
         }
         drawAlternatePopup(canvas)
+    }
+
+    override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK &&
+            event.action == KeyEvent.ACTION_UP &&
+            state.mode != KeyboardMode.LETTERS
+        ) {
+            clearPressedState()
+            state.returnToLetters()
+            invalidate()
+            return true
+        }
+        return super.onKeyPreIme(keyCode, event)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -306,10 +317,7 @@ class KeyboardView(
                 val hit = findKey(event.x, event.y)
                 touchTracker.start(event.getPointerId(0), hit)
                 if (hit != null) {
-                    if (longPressAlternatesEnabled() &&
-                        hit.type == KeyType.CHARACTER &&
-                        hit.alternateTexts.isNotEmpty()
-                    ) {
+                    if (hasLongPressAlternates(hit)) {
                         repeatHandler.postDelayed(
                             alternateLongPressRunnable,
                             longPressDelayMillis().coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS),
@@ -593,7 +601,7 @@ class KeyboardView(
         val widthDp = width / density
         val isBottomRow = rowIndex == keyboardLayout.rows.lastIndex
         val centeredHomeRowIndex =
-            if (showNumberRow() && state.mode != KeyboardMode.SYMBOLS) 2 else 1
+            if (showNumberRow() && state.mode == KeyboardMode.LETTERS) 2 else 1
         val isCenteredHomeRow =
             rowIndex == centeredHomeRowIndex &&
                 row.keys.all { it.type == KeyType.CHARACTER }
@@ -687,6 +695,15 @@ class KeyboardView(
     }
 
     /** Compact globe vector; its bounds are inset from the key rectangle by construction. */
+    private fun hasLongPressAlternates(key: KeySpec): Boolean {
+        if (key.type != KeyType.CHARACTER || key.alternateTexts.isEmpty()) return false
+        return if (key.outputText == "," || key.outputText == "،") {
+            emojiShortcutEnabled()
+        } else {
+            longPressAlternatesEnabled()
+        }
+    }
+
     private fun updateAlternatePopupSelection(x: Float, y: Float) {
         if (!alternatePopupRect.contains(x, y)) {
             alternatePopupSelected = -1
@@ -975,7 +992,7 @@ class KeyboardView(
     private fun resolvedLayout(): KeyboardLayout {
         val base = layoutProvider.layoutFor(state.language, state.mode)
         val visible = showLanguageSwitch()
-        val numberVisible = showNumberRow() && state.mode != KeyboardMode.SYMBOLS
+        val numberVisible = showNumberRow() && state.mode == KeyboardMode.LETTERS
         if (base !== lastBaseLayout ||
             visible != lastLanguageSwitchVisible ||
             numberVisible != lastNumberRowVisible
