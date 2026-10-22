@@ -68,6 +68,8 @@ interface KeyboardSettings {
 
     fun setAlternateCharactersEnabled(enabled: Boolean) = Unit
 
+    fun setEmojiShortcutEnabled(enabled: Boolean) = Unit
+
     fun clipboardHistoryEnabled(): Boolean = true
 
     fun setClipboardHistoryEnabled(enabled: Boolean) = Unit
@@ -197,6 +199,13 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
     override fun alternateCharactersEnabled(): Boolean =
         preferences.getBoolean(KEY_ALTERNATE_CHARACTERS_ENABLED, true)
 
+    override fun emojiShortcutEnabled(): Boolean =
+        preferences.getBoolean(KEY_EMOJI_SHORTCUT_ENABLED, true)
+
+    override fun setEmojiShortcutEnabled(enabled: Boolean) {
+        preferences.edit().putBoolean(KEY_EMOJI_SHORTCUT_ENABLED, enabled).apply()
+    }
+
     override fun setAlternateCharactersEnabled(enabled: Boolean) {
         preferences.edit().putBoolean(KEY_ALTERNATE_CHARACTERS_ENABLED, enabled).apply()
     }
@@ -276,6 +285,7 @@ class SharedPreferencesKeyboardSettings(context: Context) : KeyboardSettings {
         private const val KEY_NUMBER_ROW_ENABLED = "number_row_enabled"
         private const val KEY_LONG_PRESS_DELAY_LEVEL = "long_press_delay_level"
         private const val KEY_ALTERNATE_CHARACTERS_ENABLED = "alternate_characters_enabled"
+        private const val KEY_EMOJI_SHORTCUT_ENABLED = "emoji_shortcut_enabled"
         private const val KEY_CLIPBOARD_HISTORY_ENABLED = "clipboard_history_enabled"
         private const val KEY_KEYBOARD_HEIGHT_DP = "keyboard_height_dp"
         private const val KEY_RESIZE_HEIGHT_DP = "resize_height_dp"
