@@ -2,6 +2,11 @@ package com.example.aikeyboard.core
 
 enum class KeyboardMode {
     LETTERS,
+    PRIMARY_SYMBOLS,
+    EXTENDED_SYMBOLS,
+    NUMERIC_PAD,
+
+    /** Legacy name retained for settings/tests; it resolves to the primary symbols layout. */
     SYMBOLS,
 }
 
@@ -33,6 +38,7 @@ class KeyboardState(initialMode: KeyboardMode) {
     fun setEditorOptions(options: Int) {
         imeOptions = options
         editorInputState = DEFAULT_EDITOR_INPUT_STATE.copy(imeOptions = options)
+        mode = KeyboardMode.LETTERS
         shiftState = ShiftState.OFF
         lastShiftUptime = Long.MIN_VALUE
     }
@@ -43,7 +49,7 @@ class KeyboardState(initialMode: KeyboardMode) {
         mode = when (editorInputState.fieldType) {
             EditorFieldType.NUMBER,
             EditorFieldType.PHONE,
-            EditorFieldType.PIN -> KeyboardMode.SYMBOLS
+            EditorFieldType.PIN -> KeyboardMode.NUMERIC_PAD
             else -> KeyboardMode.LETTERS
         }
         shiftState = ShiftState.OFF
@@ -68,10 +74,42 @@ class KeyboardState(initialMode: KeyboardMode) {
         }
     }
 
+    /** Legacy toggle retained for callers that only know the old two-state API. */
     fun toggleMode() {
-        mode = if (mode == KeyboardMode.LETTERS) KeyboardMode.SYMBOLS else KeyboardMode.LETTERS
-        shiftState = ShiftState.OFF
-        lastShiftUptime = Long.MIN_VALUE
+        mode = if (mode == KeyboardMode.LETTERS) {
+            KeyboardMode.PRIMARY_SYMBOLS
+        } else {
+            KeyboardMode.LETTERS
+        }
+        resetShift()
+    }
+
+    /** Routes a visible mode key without changing the active alphabet language. */
+    fun handleModeSwitch(label: String) {
+        mode = when (label) {
+            "?123", "۱۲۳" -> KeyboardMode.PRIMARY_SYMBOLS
+            "ABC", "حروف" -> KeyboardMode.LETTERS
+            "More", "More symbols", "»" -> KeyboardMode.EXTENDED_SYMBOLS
+            "←", "Prev", "Previous" -> KeyboardMode.PRIMARY_SYMBOLS
+            "1234" -> KeyboardMode.NUMERIC_PAD
+            "Symbols", "SYM" -> KeyboardMode.PRIMARY_SYMBOLS
+            else -> if (mode == KeyboardMode.LETTERS) {
+                KeyboardMode.PRIMARY_SYMBOLS
+            } else {
+                KeyboardMode.LETTERS
+            }
+        }
+        resetShift()
+    }
+
+    fun returnToLetters() {
+        mode = KeyboardMode.LETTERS
+        resetShift()
+    }
+
+    fun returnToPrimarySymbols() {
+        mode = KeyboardMode.PRIMARY_SYMBOLS
+        resetShift()
     }
 
     fun toggleLanguage() {
@@ -80,14 +118,18 @@ class KeyboardState(initialMode: KeyboardMode) {
             KeyboardLanguage.URDU -> KeyboardLanguage.ROMAN_URDU
             KeyboardLanguage.ROMAN_URDU -> KeyboardLanguage.ENGLISH
         }
-        shiftState = ShiftState.OFF
-        lastShiftUptime = Long.MIN_VALUE
+        mode = KeyboardMode.LETTERS
+        resetShift()
     }
 
     /** Changes language without recreating the IME or touching the current editor text. */
     fun setLanguage(value: KeyboardLanguage) {
         language = value
         mode = KeyboardMode.LETTERS
+        resetShift()
+    }
+
+    private fun resetShift() {
         shiftState = ShiftState.OFF
         lastShiftUptime = Long.MIN_VALUE
     }
