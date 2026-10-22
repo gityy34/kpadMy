@@ -68,6 +68,8 @@ interface KeyboardSettings {
 
     fun setAlternateCharactersEnabled(enabled: Boolean) = Unit
 
+    fun emojiShortcutEnabled(): Boolean = true
+
     fun setEmojiShortcutEnabled(enabled: Boolean) = Unit
 
     fun clipboardHistoryEnabled(): Boolean = true
