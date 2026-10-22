@@ -17,7 +17,7 @@ class TypingEngine(private val state: KeyboardState) {
             }
 
             KeyType.MODE_SWITCH -> {
-                state.toggleMode()
+                state.handleModeSwitch(key.label)
                 return true
             }
 
