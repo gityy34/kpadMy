@@ -428,6 +428,7 @@ class KeyboardView(
                             updateGlidePath(event.getX(index), event.getY(index))
                         }
                     }
+                }
                 return true
             }
 
