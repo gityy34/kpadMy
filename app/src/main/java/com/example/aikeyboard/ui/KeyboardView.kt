@@ -214,11 +214,7 @@ class KeyboardView(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val previousLayout = keyboardLayout
-        val currentLayout = resolvedLayout()
-        if (currentLayout !== previousLayout) {
-            rebuildMetrics()
-        }
+        synchronizeLayout()
 
         val image = backgroundBitmap
         if (image != null) {
@@ -298,10 +294,9 @@ class KeyboardView(
     override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
         if (keyCode == KeyEvent.KEYCODE_BACK &&
             event.action == KeyEvent.ACTION_UP &&
-            state.mode != KeyboardMode.LETTERS
+            state.handleBack()
         ) {
             clearPressedState()
-            state.returnToLetters()
             invalidate()
             return true
         }
@@ -314,6 +309,8 @@ class KeyboardView(
                 // ACTION_DOWN starts a new gesture. A stale gesture is cancelled defensively;
                 // this also guarantees that two touches can never share one repeat loop.
                 clearPressedState()
+                // Rebuild mode-dependent hit boxes before the next touch is dispatched.
+                synchronizeLayout()
                 val hit = findKey(event.x, event.y)
                 touchTracker.start(event.getPointerId(0), hit)
                 if (hit != null) {
@@ -443,7 +440,10 @@ class KeyboardView(
 
     fun currentGlideGeometry(): List<GlideKeyGeometry> = glideGeometry
 
-    fun currentRowCount(): Int = resolvedLayout().rows.size
+    fun currentRowCount(): Int {
+        synchronizeLayout()
+        return keyboardLayout.rows.size
+    }
 
     /**
      * Returns the actual visual key block height for the current row count. The outer IME may
@@ -574,15 +574,19 @@ class KeyboardView(
         val bottomHeight = (
             BOTTOM_ROW_HEIGHT_DP + delta * BOTTOM_HEIGHT_DELTA_SHARE
         ).coerceIn(MIN_BOTTOM_ROW_HEIGHT_DP, MAX_BOTTOM_ROW_HEIGHT_DP)
-        val desiredNormalHeight =
-            NORMAL_KEY_HEIGHT_DP + delta * NORMAL_HEIGHT_DELTA_SHARE / safeRows
         val availableForNormalRows = (
             availableHeightDp - bottomHeight - ROW_GAP_DP * safeRows
         ).coerceAtLeast(0f)
         val fittingNormalHeight = availableForNormalRows / safeRows
-        val normalHeight = desiredNormalHeight
-            .coerceAtMost(fittingNormalHeight)
-            .coerceIn(MIN_NORMAL_KEY_HEIGHT_DP, MAX_NORMAL_KEY_HEIGHT_DP)
+        val desiredNormalHeight =
+            NORMAL_KEY_HEIGHT_DP + delta * NORMAL_HEIGHT_DELTA_SHARE / safeRows
+        val normalHeight = if (state.isSymbolOrNumericMode() && safeRows == 3) {
+            // Primary/Extended/Numeric pages use their full saved height instead of leaving the
+            // compact English alphabet's unused room below the third row.
+            fittingNormalHeight
+        } else {
+            desiredNormalHeight.coerceAtMost(fittingNormalHeight)
+        }.coerceIn(MIN_NORMAL_KEY_HEIGHT_DP, MAX_NORMAL_KEY_HEIGHT_DP)
         return normalHeight to bottomHeight
     }
 
@@ -591,19 +595,22 @@ class KeyboardView(
      * This keeps the approved proportions stable while remaining responsive to the live IME
      * width. The returned array stores left/right pairs in pixels.
      */
-    private fun horizontalVisualBounds(rowIndex: Int, row: com.example.aikeyboard.core.KeyboardRow): FloatArray {
+    private fun horizontalVisualBounds(
+        rowIndex: Int,
+        row: com.example.aikeyboard.core.KeyboardRow,
+    ): FloatArray {
         val count = row.keys.size
         val result = FloatArray(count * 2)
         if (count == 0) return result
 
         val gap = HORIZONTAL_GAP_DP * density
         val widths = FloatArray(count)
-        val widthDp = width / density
         val isBottomRow = rowIndex == keyboardLayout.rows.lastIndex
         val centeredHomeRowIndex =
             if (showNumberRow() && state.mode == KeyboardMode.LETTERS) 2 else 1
         val isCenteredHomeRow =
-            rowIndex == centeredHomeRowIndex &&
+            state.mode == KeyboardMode.LETTERS &&
+                rowIndex == centeredHomeRowIndex &&
                 row.keys.all { it.type == KeyType.CHARACTER }
         val hasWideActions = row.keys.any {
             it.type == KeyType.SHIFT || it.type == KeyType.BACKSPACE
@@ -614,7 +621,9 @@ class KeyboardView(
                 row.keys.forEachIndexed { index, key ->
                     widths[index] = when (key.type) {
                         KeyType.SPACE -> SPACE_KEY_WIDTH_DP * density
-                        KeyType.MODE_SWITCH, KeyType.ENTER, KeyType.BACKSPACE -> ACTION_KEY_WIDTH_DP * density
+                        KeyType.MODE_SWITCH,
+                        KeyType.ENTER,
+                        KeyType.BACKSPACE -> ACTION_KEY_WIDTH_DP * density
                         else -> NORMAL_KEY_WIDTH_DP * density
                     }
                 }
@@ -626,9 +635,12 @@ class KeyboardView(
             }
 
             hasWideActions -> {
-                val normalCount = row.keys.count {
+                val normalKeys = row.keys.filter {
                     it.type != KeyType.SHIFT && it.type != KeyType.BACKSPACE
-                }.coerceAtLeast(1)
+                }
+                val normalWeight = normalKeys.sumOf { it.weight.toDouble() }
+                    .toFloat()
+                    .coerceAtLeast(1f)
                 val fixed = row.keys.sumOf { key ->
                     when (key.type) {
                         KeyType.SHIFT -> SHIFT_KEY_WIDTH_DP * density
@@ -636,22 +648,17 @@ class KeyboardView(
                         else -> 0f
                     }.toDouble()
                 }.toFloat()
-                val normalWidth = (
-                    width - fixed - gap * (count - 1)
-                ) / normalCount
+                val normalWidth = (width - fixed - gap * (count - 1)) / normalWeight
                 row.keys.forEachIndexed { index, key ->
                     widths[index] = when (key.type) {
                         KeyType.SHIFT -> SHIFT_KEY_WIDTH_DP * density
                         KeyType.BACKSPACE -> BACKSPACE_KEY_WIDTH_DP * density
-                        else -> normalWidth
+                        else -> normalWidth * key.weight
                     }
                 }
             }
 
             isCenteredHomeRow -> {
-                // Keep the home row centered after an optional number row is inserted.
-                // Urdu letter rows use the same stable geometry and must not expand
-                // horizontally just because the row index shifted.
                 val preferredInset = SECOND_ROW_INSET_DP * density
                 val normalWidthAtInset = (
                     width - preferredInset * 2f - gap * (count - 1)
@@ -664,8 +671,13 @@ class KeyboardView(
             }
 
             else -> {
-                val normalWidth = (width - gap * (count - 1)) / count
-                for (index in widths.indices) widths[index] = normalWidth
+                val totalWeight = row.keys.sumOf { it.weight.toDouble() }
+                    .toFloat()
+                    .coerceAtLeast(1f)
+                val weightedWidth = (width - gap * (count - 1)) / totalWeight
+                for (index in widths.indices) {
+                    widths[index] = weightedWidth * row.keys[index].weight
+                }
             }
         }
 
@@ -991,7 +1003,9 @@ class KeyboardView(
 
     private fun resolvedLayout(): KeyboardLayout {
         val base = layoutProvider.layoutFor(state.language, state.mode)
-        val visible = showLanguageSwitch()
+        // The normal globe/language key is only present in Alphabet mode. Symbol layers use
+        // ABC/1234/?123 navigation in its place.
+        val visible = showLanguageSwitch() && state.isAlphabetMode()
         val numberVisible = showNumberRow() && state.mode == KeyboardMode.LETTERS
         if (base !== lastBaseLayout ||
             visible != lastLanguageSwitchVisible ||
@@ -1005,6 +1019,12 @@ class KeyboardView(
             keyboardLayout = resolved
         }
         return keyboardLayout
+    }
+
+    private fun synchronizeLayout() {
+        val previousLayout = keyboardLayout
+        val currentLayout = resolvedLayout()
+        if (currentLayout !== previousLayout) rebuildMetrics()
     }
 
     private fun withNumberRow(base: KeyboardLayout): KeyboardLayout {

@@ -65,10 +65,10 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
     override fun layoutFor(language: KeyboardLanguage, mode: KeyboardMode): KeyboardLayout =
         when (mode) {
             KeyboardMode.LETTERS -> if (language == KeyboardLanguage.URDU) urduLetters else englishLetters
-            KeyboardMode.EXTENDED_SYMBOLS -> extendedSymbols
-            KeyboardMode.NUMERIC_PAD -> numericPad
             KeyboardMode.PRIMARY_SYMBOLS,
             KeyboardMode.SYMBOLS -> if (language == KeyboardLanguage.URDU) urduPrimarySymbols else englishPrimarySymbols
+            KeyboardMode.EXTENDED_SYMBOLS -> extendedSymbols
+            KeyboardMode.NUMERIC_PAD -> numericPad
         }
 
     private fun row(text: String): KeyboardRow = KeyboardRow(keys(text))
@@ -80,17 +80,28 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
         KeyboardLayout(
             rows = arrayOf(
                 symbolRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")),
-                symbolRow(listOf("@", "#", "$", "%", "&", "*", "-", "+", "(", ")")),
-                symbolRow(listOf("_", "\"", "'", ":", ";", "!", "?", "/", comma, period)),
+                symbolRow(listOf("@", "#", "$", "_", "&", "-", "+", "(", ")", "/")),
                 KeyboardRow(
                     arrayOf(
-                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.1f),
-                        KeySpec.action(KeyType.MODE_SWITCH, "More", 1.1f),
-                        KeySpec.action(KeyType.MODE_SWITCH, "1234", 1.1f),
-                        KeySpec.space(2.4f),
-                        KeySpec.punctuation("."),
-                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.2f),
-                        KeySpec.action(KeyType.ENTER, "↵", 1.2f),
+                        KeySpec.action(KeyType.MODE_SWITCH, "=<\\", 1.15f),
+                        KeySpec.punctuation("*"),
+                        KeySpec.punctuation("\""),
+                        KeySpec.punctuation("'"),
+                        KeySpec.punctuation(":"),
+                        KeySpec.punctuation(";"),
+                        KeySpec.punctuation("!"),
+                        KeySpec.punctuation("?"),
+                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.5f),
+                    ),
+                ),
+                KeyboardRow(
+                    arrayOf(
+                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.25f),
+                        KeySpec.punctuation(comma),
+                        KeySpec.action(KeyType.MODE_SWITCH, "1234", 1.15f),
+                        KeySpec.space(3.5f),
+                        KeySpec.punctuation(period),
+                        KeySpec.action(KeyType.ENTER, "↵", 1.5f),
                     ),
                 ),
             ),
@@ -99,38 +110,70 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
     private fun extendedSymbols(): KeyboardLayout =
         KeyboardLayout(
             rows = arrayOf(
-                symbolRow(listOf("~", "\u0060", "|", "•", "√", "π", "÷", "×", "±", "≠")),
-                symbolRow(listOf("£", "¢", "€", "¥", "§", "°", "^", "=", "∞", "µ")),
-                symbolRow(listOf("{", "}", "[", "]", "<", ">", "\\", "©", "®", "™", "✓")),
+                symbolRow(listOf("~", "\u0060", "|", "•", "√", "π", "÷", "×", "§", "∆")),
+                symbolRow(listOf("£", "¢", "€", "¥", "^", "°", "=", "{", "}", "\\")),
                 KeyboardRow(
                     arrayOf(
-                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.1f),
-                        KeySpec.action(KeyType.MODE_SWITCH, "←", 1.1f),
-                        KeySpec.action(KeyType.MODE_SWITCH, "1234", 1.1f),
-                        KeySpec.space(2.4f),
-                        KeySpec.punctuation("."),
-                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.2f),
-                        KeySpec.action(KeyType.ENTER, "↵", 1.2f),
+                        KeySpec.action(KeyType.MODE_SWITCH, "?123", 1.15f),
+                        KeySpec.punctuation("%"),
+                        KeySpec.punctuation("©"),
+                        KeySpec.punctuation("®"),
+                        KeySpec.punctuation("™"),
+                        KeySpec.punctuation("✓"),
+                        KeySpec.punctuation("["),
+                        KeySpec.punctuation("]"),
+                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.5f),
+                    ),
+                ),
+                KeyboardRow(
+                    arrayOf(
+                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.25f),
+                        KeySpec.punctuation("<"),
+                        KeySpec.action(KeyType.MODE_SWITCH, "1234", 1.15f),
+                        KeySpec.space(3.5f),
+                        KeySpec.punctuation(">"),
+                        KeySpec.action(KeyType.ENTER, "↵", 1.5f),
                     ),
                 ),
             ),
         )
 
+    private fun numericOperatorRow(
+        operator: String,
+        digits: String,
+        utility: String,
+    ): KeyboardRow = KeyboardRow(
+        arrayOf(
+            KeySpec.punctuation(operator, 0.8f),
+            *digits.map { KeySpec.punctuation(it.toString(), 1.15f) }.toTypedArray(),
+            KeySpec.punctuation(utility, 0.8f),
+        ),
+    )
+
     private fun numericPad(): KeyboardLayout =
         KeyboardLayout(
             rows = arrayOf(
-                symbolRow(listOf("1", "2", "3", "+")),
-                symbolRow(listOf("4", "5", "6", "-")),
-                symbolRow(listOf("7", "8", "9", "*")),
-                symbolRow(listOf("%", "0", "=", "/")),
+                numericOperatorRow("+", "123", "%"),
+                numericOperatorRow("-", "456", "="),
                 KeyboardRow(
                     arrayOf(
-                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.1f),
-                        KeySpec.action(KeyType.MODE_SWITCH, "Symbols", 1.1f),
+                        KeySpec.punctuation("*", 0.8f),
+                        KeySpec.punctuation("7", 1.15f),
+                        KeySpec.punctuation("8", 1.15f),
+                        KeySpec.punctuation("9", 1.15f),
+                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.5f),
+                    ),
+                ),
+                KeyboardRow(
+                    arrayOf(
+                        KeySpec.punctuation("/", 0.8f),
+                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.25f),
                         KeySpec.punctuation(","),
+                        KeySpec.action(KeyType.MODE_SWITCH, "!?#", 1.15f),
+                        KeySpec.punctuation("0"),
+                        KeySpec.punctuation("="),
                         KeySpec.punctuation("."),
-                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.2f),
-                        KeySpec.action(KeyType.ENTER, "↵", 1.2f),
+                        KeySpec.action(KeyType.ENTER, "↵", 1.5f),
                     ),
                 ),
             ),
