@@ -22,6 +22,8 @@ class KeySpec private constructor(
     val label: String,
     val shiftedLabel: String?,
     val weight: Float,
+    /** Characters shown by the responsive long-press alternate popup. */
+    val alternateTexts: List<String> = emptyList(),
 ) {
     fun textFor(shifted: Boolean): String =
         if (shifted && shiftedOutputText != null) shiftedOutputText else outputText
@@ -30,7 +32,12 @@ class KeySpec private constructor(
         if (shifted && shiftedLabel != null) shiftedLabel else label
 
     companion object {
-        fun character(lowercase: String, uppercase: String, weight: Float = 1f): KeySpec =
+        fun character(
+            lowercase: String,
+            uppercase: String,
+            weight: Float = 1f,
+            alternateTexts: List<String> = emptyList(),
+        ): KeySpec =
             KeySpec(
                 type = KeyType.CHARACTER,
                 outputText = lowercase,
@@ -38,9 +45,14 @@ class KeySpec private constructor(
                 label = lowercase,
                 shiftedLabel = uppercase,
                 weight = weight,
+                alternateTexts = alternateTexts,
             )
 
-        fun punctuation(text: String, weight: Float = 1f): KeySpec =
+        fun punctuation(
+            text: String,
+            weight: Float = 1f,
+            alternateTexts: List<String> = emptyList(),
+        ): KeySpec =
             KeySpec(
                 type = KeyType.CHARACTER,
                 outputText = text,
@@ -48,6 +60,7 @@ class KeySpec private constructor(
                 label = text,
                 shiftedLabel = null,
                 weight = weight,
+                alternateTexts = alternateTexts,
             )
 
         fun action(type: Int, label: String, weight: Float = 1f): KeySpec =

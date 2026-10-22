@@ -10,6 +10,7 @@ on:
   pull_request:
     branches:
       - main
+      - ci-apk-build-v11
       - phase-1-ime-foundation
       - phase-1-touch-response
   workflow_dispatch:
@@ -54,7 +55,7 @@ jobs:
         run: gradle --no-daemon :app:testDebugUnitTest
 
       - name: Read release version
-        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')) || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) }}
+        if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-v')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')) || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) }}
         id: app_version
         shell: bash
         run: |
@@ -64,15 +65,15 @@ jobs:
           echo "version_name=$version_name" >> "$GITHUB_OUTPUT"
 
       - name: Build debug APK
-        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')) || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) }}
+        if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-v')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')) || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) }}
         run: gradle --no-daemon :app:assembleDebug
 
       - name: Name versioned APK
-        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')) || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) }}
+        if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-v')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')) || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) }}
         run: cp app/build/outputs/apk/debug/app-debug.apk "app/build/outputs/apk/debug/ai-keyboard-v${{ steps.app_version.outputs.version_code }}-latest.apk"
 
       - name: Upload debug APK
-        if: ${{ (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')) || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) }}
+        if: ${{ (github.event_name == 'pull_request' && startsWith(github.head_ref, 'release-v')) || (github.event_name == 'push' && startsWith(github.ref, 'refs/heads/release-v')) || (github.event_name == 'workflow_dispatch' && inputs.build_apk == true) }}
         uses: actions/upload-artifact@v4
         with:
           name: ai-keyboard-v${{ steps.app_version.outputs.version_code }}-latest

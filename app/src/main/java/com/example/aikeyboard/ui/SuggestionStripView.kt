@@ -36,6 +36,7 @@ class SuggestionStripView(
         color = TEXT_COLOR
         textSize = TEXT_SIZE_SP * scaledDensity
         typeface = android.graphics.Typeface.create("sans-serif-medium", android.graphics.Typeface.NORMAL)
+        textAlign = Paint.Align.CENTER
     }
 
     private var candidates: List<SuggestionCandidate> = emptyList()
@@ -58,9 +59,21 @@ class SuggestionStripView(
     }
 
     fun setCandidates(value: List<SuggestionCandidate>) {
-        val next = if (value.size <= slotCount) value else value.subList(0, slotCount)
+        setCandidates(exactTyped = null, value = value)
+    }
+
+    fun setCandidates(
+        exactTyped: SuggestionCandidate?,
+        value: List<SuggestionCandidate>,
+    ) {
+        val next = ArrayList<SuggestionCandidate>(FIXED_SLOT_COUNT)
+        exactTyped?.let { next += it }
+        value.forEach { candidate ->
+            if (next.size >= FIXED_SLOT_COUNT) return@forEach
+            if (exactTyped == null || candidate.text != exactTyped.text) next += candidate
+        }
         if (candidates == next) return
-        candidates = next.toList()
+        candidates = next
         invalidate()
     }
 
@@ -86,12 +99,12 @@ class SuggestionStripView(
         canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
         if (slotCount <= 0 || width <= 0) return
 
-        val slotWidth = width.toFloat() / slotCount
-        for (slot in 0 until slotCount) {
+        val slotWidth = width.toFloat() / FIXED_SLOT_COUNT
+        for (slot in 0 until FIXED_SLOT_COUNT) {
             val left = slot * slotWidth
-            val right = if (slot == slotCount - 1) width.toFloat() else (slot + 1) * slotWidth
+            val right = if (slot == FIXED_SLOT_COUNT - 1) width.toFloat() else (slot + 1) * slotWidth
             if (slot == pressedSlot) canvas.drawRect(left, 0f, right, height.toFloat(), pressedPaint)
-            if (slot < slotCount - 1) {
+            if (slot < FIXED_SLOT_COUNT - 1) {
                 canvas.drawRect(right - DIVIDER_WIDTH_DP * density, 0f, right, height.toFloat(), dividerPaint)
             }
             candidates.getOrNull(slot)?.let { drawCandidate(canvas, it.text, left, right) }
@@ -160,32 +173,26 @@ class SuggestionStripView(
     fun cancelPendingInput() = cancelGesture()
 
     private fun drawCandidate(canvas: Canvas, text: String, left: Float, right: Float) {
-        val horizontalPadding = (12 * density).roundToInt()
-        val availableWidth = (right - left).toInt() - horizontalPadding * 2
-        if (availableWidth <= 0 || text.isEmpty()) return
-        val direction = if (containsRtl(text)) {
-            TextDirectionHeuristics.FIRSTSTRONG_RTL
-        } else {
-            TextDirectionHeuristics.FIRSTSTRONG_LTR
-        }
-        val layout = StaticLayout.Builder.obtain(
-            text,
-            0,
-            text.length,
-            textPaint,
-            availableWidth,
-        ).setAlignment(Layout.Alignment.ALIGN_CENTER)
-            .setIncludePad(false)
-            .setMaxLines(1)
-            .setEllipsize(TextUtils.TruncateAt.END)
-            .setTextDirection(direction)
-            .build()
-        val top = ((height - layout.height) / 2f).coerceAtLeast(0f)
+        val horizontalPadding = 8f * density
+        val availableWidth = (right - left - horizontalPadding * 2f).coerceAtLeast(1f)
+        if (availableWidth <= 0f || text.isEmpty()) return
+        val fitted = SuggestionDisplay.fit(
+            fullText = text,
+            availableWidthPx = availableWidth,
+            baseTextSizePx = TEXT_SIZE_SP * scaledDensity,
+            scaledDensity = scaledDensity,
+            textPaint = textPaint,
+        )
+        textPaint.textSize = fitted.textSizePx
+        textPaint.textScaleX = fitted.textScaleX
+        textPaint.textAlign = Paint.Align.CENTER
         canvas.save()
         canvas.clipRect(left, 0f, right, height.toFloat())
-        canvas.translate(left + horizontalPadding, top)
-        layout.draw(canvas)
+        val centerX = (left + right) / 2f
+        val baseline = height / 2f - (textPaint.ascent() + textPaint.descent()) / 2f
+        canvas.drawText(fitted.text, centerX, baseline, textPaint)
         canvas.restore()
+        textPaint.textScaleX = 1f
     }
 
     private fun containsRtl(text: String): Boolean = text.any { character ->
@@ -194,7 +201,7 @@ class SuggestionStripView(
 
     private fun slotAt(x: Float): Int {
         if (slotCount <= 0 || width <= 0 || x < 0f || x > width.toFloat()) return -1
-        return (x / (width.toFloat() / slotCount)).toInt().coerceIn(0, slotCount - 1)
+        return (x / (width.toFloat() / FIXED_SLOT_COUNT)).toInt().coerceIn(0, FIXED_SLOT_COUNT - 1)
     }
 
     private fun cancelGesture() {
@@ -207,6 +214,7 @@ class SuggestionStripView(
 
     private companion object {
         const val DEFAULT_SLOT_COUNT = 3
+        const val FIXED_SLOT_COUNT = 3
         // Keep the strip stable and close to a normal Gboard-sized candidate row.
         const val DEFAULT_HEIGHT_DP = 48
         const val TEXT_SIZE_SP = 23f
