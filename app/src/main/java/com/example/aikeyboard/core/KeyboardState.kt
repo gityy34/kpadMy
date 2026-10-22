@@ -77,7 +77,7 @@ class KeyboardState(initialMode: KeyboardMode) {
     /** Legacy toggle retained for callers that only know the old two-state API. */
     fun toggleMode() {
         mode = if (mode == KeyboardMode.LETTERS) {
-            KeyboardMode.PRIMARY_SYMBOLS
+            KeyboardMode.SYMBOLS
         } else {
             KeyboardMode.LETTERS
         }
