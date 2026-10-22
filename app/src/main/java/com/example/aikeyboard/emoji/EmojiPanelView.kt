@@ -20,10 +20,16 @@ class EmojiPanelView(
     private var searchQuery = ""
     private var scroll = 0
     private var theme = KeyboardTheme.SOLID_WHITE
+    private var emojiScale = 1f
     private var downY = 0f
     private var moved = false
 
     fun setTheme(value: KeyboardTheme) { theme = value; invalidate() }
+
+    fun setEmojiScale(value: Float) {
+        emojiScale = value.coerceIn(0.75f, 1.35f)
+        invalidate()
+    }
 
     fun setSearchQuery(value: String) {
         searchQuery = value
@@ -56,7 +62,7 @@ class EmojiPanelView(
         val visibleRows = ceil((height - startY - 42f * density) / cellHeight).toInt().coerceAtLeast(1)
         val first = scroll * columns
         val last = (first + visibleRows * columns).coerceAtMost(values.size)
-        paint.textSize = 26f * density
+        paint.textSize = 26f * density * emojiScale
         values.subList(first, last).forEachIndexed { offset, emoji ->
             val column = offset % columns
             val row = offset / columns

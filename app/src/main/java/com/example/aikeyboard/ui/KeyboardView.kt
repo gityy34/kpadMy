@@ -1,19 +1,26 @@
 package com.example.aikeyboard.ui
 
 import android.content.Context
+import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.RectF
 import android.graphics.Shader
+import android.net.Uri
 import android.os.Handler
 import android.os.Looper
+import android.view.KeyEvent
 import android.view.MotionEvent
 import android.view.View
 import com.example.aikeyboard.core.KeySpec
 import com.example.aikeyboard.core.KeyType
 import com.example.aikeyboard.core.KeyboardLayout
+import com.example.aikeyboard.core.KeyboardMode
 import com.example.aikeyboard.core.KeyboardLayoutProvider
+import com.example.aikeyboard.core.KeyboardLanguage
 import com.example.aikeyboard.core.KeyboardState
 import com.example.aikeyboard.glide.GlideGesture
 import com.example.aikeyboard.glide.GlideKeyGeometry
@@ -41,12 +48,23 @@ class KeyboardView(
     private val onSpaceCursorStarted: () -> Boolean = { false },
     private val onSpaceCursorMoved: (Int) -> Unit = {},
     private val onBackspaceSwipeStarted: () -> Boolean = { false },
-    private val onBackspaceSwipeMoved: () -> Unit = {},
+    private val onBackspaceSwipeMoved: (Float) -> Unit = {},
     private val onBackspaceSwipeFinished: () -> Unit = {},
     private val onBackspaceSwipeCancelled: () -> Unit = {},
+    private val initialFontScale: Float = 1f,
+    private val showLanguageSwitch: () -> Boolean = { false },
+    private val showNumberRow: () -> Boolean = { false },
+    private val longPressDelayMillis: () -> Long = { DEFAULT_LONG_PRESS_DELAY_MS },
+    private val longPressEnabled: () -> Boolean = { true },
+    private val emojiShortcutEnabled: () -> Boolean = { true },
+    private val onLongPressAlternateTriggered: (String) -> Unit = {},
 ) : View(context) {
 
     private val density = resources.displayMetrics.density
+    // This is the single scale used by every text-based key label and alternate hint. It is
+    // updated explicitly when Settings changes so the active IME cannot retain a stale callback
+    // value or fall back to the constructor default.
+    private var appliedFontScale = initialFontScale.coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)
     private val scaledDensity = resources.displayMetrics.scaledDensity
     private val keyPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val fontMetrics = Paint.FontMetrics()
@@ -68,6 +86,8 @@ class KeyboardView(
     }
     private val backgroundPaint = Paint(Paint.ANTI_ALIAS_FLAG)
     private var theme = KeyboardTheme.SOLID_WHITE
+    private var backgroundBitmap: Bitmap? = null
+    private var backgroundImageKey: String? = null
     private val repeatHandler = Handler(Looper.getMainLooper())
     private val repeatRunnable = object : Runnable {
         override fun run() {
@@ -99,13 +119,39 @@ class KeyboardView(
         onSpaceLongPressed()
     }
 
+    private val alternateLongPressRunnable = Runnable {
+        val key = touchTracker.pressedKey
+        val pointerId = touchTracker.activePointerId
+        if (pointerId == TouchTracker.INVALID_POINTER_ID ||
+            key?.type != KeyType.CHARACTER ||
+            !hasLongPressAlternates(key) ||
+            longPressCancelled ||
+            longPressTriggered ||
+            !touchTracker.owns(pointerId)
+        ) return@Runnable
+
+        // The main character was committed on ACTION_DOWN for responsive normal typing.
+        // Replace it exactly once when the configured threshold is reached; no popup is shown.
+        longPressTriggered = true
+        onLongPressAlternateTriggered(key.alternateTexts.first())
+        invalidate()
+    }
+
     private var keyboardLayout: KeyboardLayout = layoutProvider.layoutFor(state.language, state.mode)
+    private var lastBaseLayout: KeyboardLayout = keyboardLayout
+    private var lastLanguageSwitchVisible = false
+    private var lastNumberRowVisible = false
+    private var longPressTriggered = false
+    private var longPressCancelled = false
+    private var longPressDownX = 0f
+    private var longPressDownY = 0f
     private var rowMetrics: Array<RowMetrics> = emptyArray()
     private var pressedRow = -1
     private var pressedColumn = -1
     private var backspaceRepeatCount = 0
     private var backspaceSwipeActive = false
     private var backspaceLastX = 0f
+    private var backspaceSwipeStartX = 0f
     private var backspaceStartY = 0f
     private var backspaceAccumulatedLeft = 0f
     private var spaceCommitted = false
@@ -125,12 +171,17 @@ class KeyboardView(
     init {
         isFocusable = true
         isClickable = true
+        contentDescription = "Keyboard. Space: ${activeSpaceLabel()}. Switch language."
         setBackgroundColor(BACKGROUND_COLOR)
     }
 
     fun applyTheme(value: KeyboardTheme) {
         theme = value
-        backgroundPaint.shader = if (value.isGradient) {
+        if (backgroundImageKey != value.backgroundImageUri) {
+            backgroundImageKey = value.backgroundImageUri
+            backgroundBitmap = decodeBackground(value.backgroundImageUri)
+        }
+        backgroundPaint.shader = if (value.isGradient && backgroundBitmap == null) {
             LinearGradient(
                 0f, 0f, width.toFloat().coerceAtLeast(1f), height.toFloat().coerceAtLeast(1f),
                 value.gradientStart ?: value.backgroundColor,
@@ -161,14 +212,19 @@ class KeyboardView(
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
-        val currentLayout = layoutProvider.layoutFor(state.language, state.mode)
-        if (currentLayout !== keyboardLayout) {
-            keyboardLayout = currentLayout
-            rebuildMetrics()
-        }
+        synchronizeLayout()
 
-        if (backgroundPaint.shader == null) canvas.drawColor(theme.backgroundColor)
-        else canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
+        val image = backgroundBitmap
+        if (image != null) {
+            backgroundPaint.shader = null
+            canvas.drawBitmap(image, null, RectF(0f, 0f, width.toFloat(), height.toFloat()), backgroundPaint)
+            backgroundPaint.color = Color.argb(54, 0, 0, 0)
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
+        } else if (backgroundPaint.shader == null) {
+            canvas.drawColor(theme.backgroundColor)
+        } else {
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), backgroundPaint)
+        }
         drawGlideTrail(canvas)
         val shifted = state.shiftActive()
         for (rowIndex in keyboardLayout.rows.indices) {
@@ -179,45 +235,98 @@ class KeyboardView(
                 val left = metrics.left[column]
                 val right = metrics.right[column]
                 val isPressed = rowIndex == pressedRow && column == pressedColumn
+                // Numeric mode uses a visually distinct operator rail while keeping the
+                // original touch rectangles and keyboard geometry unchanged.
+                val isNumericRailKey = state.mode == KeyboardMode.NUMERIC_PAD && (
+                    (rowIndex < 4 && column == 0) ||
+                        (rowIndex < 3 && column == row.keys.lastIndex)
+                    )
+                val isNumericCircularAbc = state.mode == KeyboardMode.NUMERIC_PAD &&
+                    rowIndex == keyboardLayout.rows.lastIndex &&
+                    key.type == KeyType.MODE_SWITCH &&
+                    key.labelFor(false) == "ABC"
                 keyPaint.color = when {
                     isPressed -> theme.pressedKeyColor
                     key.type == KeyType.SHIFT && shifted -> theme.shiftColor
+                    isNumericRailKey -> theme.specialKeyColor
                     key.type == KeyType.MODE_SWITCH ||
                         key.type == KeyType.LANGUAGE_SWITCH ||
                         key.type == KeyType.ENTER -> theme.specialKeyColor
                     else -> theme.keyColor
                 }
                 keyPaint.style = Paint.Style.FILL
-                canvas.drawRoundRect(
-                    left + keyInset,
-                    metrics.top + keyInset,
-                    right - keyInset,
-                    metrics.bottom - keyInset,
-                    cornerRadius,
-                    cornerRadius,
-                    keyPaint,
-                )
+                if (isNumericCircularAbc) {
+                    canvas.drawOval(
+                        left + keyInset,
+                        metrics.top + keyInset,
+                        right - keyInset,
+                        metrics.bottom - keyInset,
+                        keyPaint,
+                    )
+                } else {
+                    canvas.drawRoundRect(
+                        left + keyInset,
+                        metrics.top + keyInset,
+                        right - keyInset,
+                        metrics.bottom - keyInset,
+                        if (isNumericRailKey) cornerRadius * 0.7f else cornerRadius,
+                        if (isNumericRailKey) cornerRadius * 0.7f else cornerRadius,
+                        keyPaint,
+                    )
+                }
                 if (theme.keyStyle == KeyStyle.BORDERED) {
                     keyPaint.style = Paint.Style.STROKE
                     keyPaint.strokeWidth = density
                     keyPaint.color = theme.borderColor
-                    canvas.drawRoundRect(
-                        left + keyInset, metrics.top + keyInset,
-                        right - keyInset, metrics.bottom - keyInset,
-                        cornerRadius, cornerRadius, keyPaint,
-                    )
+                    if (isNumericCircularAbc) {
+                        canvas.drawOval(
+                            left + keyInset, metrics.top + keyInset,
+                            right - keyInset, metrics.bottom - keyInset, keyPaint,
+                        )
+                    } else {
+                        val railRadius = if (isNumericRailKey) cornerRadius * 0.7f else cornerRadius
+                        canvas.drawRoundRect(
+                            left + keyInset, metrics.top + keyInset,
+                            right - keyInset, metrics.bottom - keyInset,
+                            railRadius, railRadius, keyPaint,
+                        )
+                    }
                     keyPaint.style = Paint.Style.FILL
                 }
 
-                val label = key.labelFor(shifted)
+                if (key.type == KeyType.LANGUAGE_SWITCH) {
+                    drawLanguageSwitchIcon(
+                        canvas,
+                        (left + right) / 2f,
+                        (metrics.top + metrics.bottom) / 2f,
+                    )
+                    continue
+                }
+                val label = displayLabel(key, shifted)
                 textPaint.color = theme.textColor
-                textPaint.textSize = keyTextSizeSp(key) * scaledDensity
+                val rowHeightPx = (metrics.bottom - metrics.top - keyInset * 2f).coerceAtLeast(1f)
+                textPaint.textSize = fittedKeyTextSizePx(key, label, left, right, rowHeightPx)
                 val textWidth = textPaint.measureText(label)
                 textPaint.getFontMetrics(fontMetrics)
                 val baseline = (metrics.top + metrics.bottom - fontMetrics.ascent - fontMetrics.descent) / 2f
                 canvas.drawText(label, (left + right - textWidth) / 2f, baseline, textPaint)
+                if (hasLongPressAlternates(key)) {
+                    drawAlternateHint(canvas, key.alternateTexts.first(), left, right, metrics.top)
+                }
             }
         }
+    }
+
+    override fun onKeyPreIme(keyCode: Int, event: KeyEvent): Boolean {
+        if (keyCode == KeyEvent.KEYCODE_BACK &&
+            event.action == KeyEvent.ACTION_UP &&
+            state.handleBack()
+        ) {
+            clearPressedState()
+            invalidate()
+            return true
+        }
+        return super.onKeyPreIme(keyCode, event)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -226,9 +335,13 @@ class KeyboardView(
                 // ACTION_DOWN starts a new gesture. A stale gesture is cancelled defensively;
                 // this also guarantees that two touches can never share one repeat loop.
                 clearPressedState()
+                // Rebuild mode-dependent hit boxes before the next touch is dispatched.
+                synchronizeLayout()
                 val hit = findKey(event.x, event.y)
                 touchTracker.start(event.getPointerId(0), hit)
                 if (hit != null) {
+                    longPressDownX = event.x
+                    longPressDownY = event.y
                     if (glideEnabled() && isGlideKey(hit)) {
                         glideEligible = true
                         glideProvisionalText = hit.textFor(state.shiftActive())
@@ -246,6 +359,14 @@ class KeyboardView(
                     } else {
                         onKeyPressed(hit)
                     }
+                    // Only schedule replacement after the main character was successfully
+                    // committed. This prevents a stale hold from deleting unrelated text.
+                    if (committed && hasLongPressAlternates(hit)) {
+                        repeatHandler.postDelayed(
+                            alternateLongPressRunnable,
+                            longPressDelayMillis().coerceIn(MIN_LONG_PRESS_DELAY_MS, MAX_LONG_PRESS_DELAY_MS),
+                        )
+                    }
                     // State changes such as one-shot Shift consumption and mode switching must
                     // be reflected without making the next key wait for a later event.
                     invalidate()
@@ -259,6 +380,7 @@ class KeyboardView(
                     if (hit.type == KeyType.BACKSPACE) {
                         backspaceRepeatCount = 0
                         backspaceLastX = event.x
+                        backspaceSwipeStartX = event.x
                         backspaceStartY = event.y
                         backspaceAccumulatedLeft = 0f
                         repeatHandler.postDelayed(repeatRunnable, BACKSPACE_REPEAT_START_DELAY_MS)
@@ -279,15 +401,37 @@ class KeyboardView(
                     event.findPointerIndex(touchTracker.activePointerId) < 0
                 ) {
                     clearPressedState()
-                } else if (spaceCommitted || spaceCursorActive) {
+                } else {
                     val index = event.findPointerIndex(touchTracker.activePointerId)
-                    if (index >= 0) updateSpaceCursor(event.getX(index), event.getY(index))
-                } else if (touchTracker.pressedKey?.type == KeyType.BACKSPACE) {
-                    val index = event.findPointerIndex(touchTracker.activePointerId)
-                    if (index >= 0) updateBackspaceSwipe(event.getX(index), event.getY(index))
-                } else if (glideEligible) {
-                    val index = event.findPointerIndex(touchTracker.activePointerId)
-                    if (index >= 0) updateGlidePath(event.getX(index), event.getY(index))
+                    if (index >= 0 && !longPressTriggered && !longPressCancelled) {
+                        val movedX = event.getX(index)
+                        val movedY = event.getY(index)
+                        if (hypot(movedX - longPressDownX, movedY - longPressDownY) >
+                            LONG_PRESS_MOVE_TOLERANCE_DP * density
+                        ) {
+                            repeatHandler.removeCallbacks(alternateLongPressRunnable)
+                            longPressCancelled = true
+                        }
+                    }
+                    if (longPressTriggered) {
+                        // A consumed Long Press owns this gesture; movement cannot create a
+                        // second symbol or start Glide from the same finger hold.
+                    } else if (spaceCommitted || spaceCursorActive) {
+                        val index = event.findPointerIndex(touchTracker.activePointerId)
+                        if (index >= 0) {
+                            updateSpaceCursor(event.getX(index), event.getY(index))
+                        }
+                    } else if (touchTracker.pressedKey?.type == KeyType.BACKSPACE) {
+                        val index = event.findPointerIndex(touchTracker.activePointerId)
+                        if (index >= 0) {
+                            updateBackspaceSwipe(event.getX(index), event.getY(index))
+                        }
+                    } else if (glideEligible) {
+                        val index = event.findPointerIndex(touchTracker.activePointerId)
+                        if (index >= 0) {
+                            updateGlidePath(event.getX(index), event.getY(index))
+                        }
+                    }
                 }
                 return true
             }
@@ -336,22 +480,35 @@ class KeyboardView(
         clearPressedState()
     }
 
+    /**
+     * Applies the persisted keyboard font scale to the already-visible IME.
+     *
+     * The scale affects text glyphs only; key geometry and icon glyph sizes remain unchanged.
+     */
+    fun setKeyboardFontScale(scale: Float) {
+        val resolved = scale.coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE)
+        if (appliedFontScale == resolved) return
+        appliedFontScale = resolved
+        invalidate()
+    }
+
     fun currentGlideGeometry(): List<GlideKeyGeometry> = glideGeometry
 
-    fun currentRowCount(): Int = layoutProvider.layoutFor(state.language, state.mode).rows.size
+    fun currentRowCount(): Int {
+        synchronizeLayout()
+        return keyboardLayout.rows.size
+    }
 
     /**
      * Returns the actual visual key block height for the current row count. The outer IME may
      * contain additional blank space, but keys are never stretched to consume it.
      */
     fun visualKeyBlockHeightDp(availableHeightDp: Int): Int {
-        val normalRows = (keyboardLayout.rows.size - 1).coerceAtLeast(1)
-        val available = availableHeightDp.toFloat()
+        val activeLayout = resolvedLayout()
+        val normalRows = (activeLayout.rows.size - 1).coerceAtLeast(1)
         val gap = ROW_GAP_DP * normalRows
-        val maxNormalHeight = ((available - BOTTOM_ROW_HEIGHT_DP - gap) / normalRows)
-            .coerceAtLeast(1f)
-        val normalHeight = min(NORMAL_KEY_HEIGHT_DP, maxNormalHeight)
-        return (normalHeight * normalRows + gap + BOTTOM_ROW_HEIGHT_DP).roundToInt()
+        val (normalHeight, bottomHeight) = rowHeightsDp(availableHeightDp.toFloat(), normalRows)
+        return (normalHeight * normalRows + gap + bottomHeight).roundToInt()
     }
 
     override fun onDetachedFromWindow() {
@@ -379,13 +536,12 @@ class KeyboardView(
 
         val normalRows = (keyboardLayout.rows.size - 1).coerceAtLeast(1)
         val rowGap = ROW_GAP_DP * density
-        val bottomRowHeight = BOTTOM_ROW_HEIGHT_DP * density
-        val availableHeight = height.toFloat()
-        val maxNormalHeight = (
-            availableHeight - bottomRowHeight - rowGap * normalRows
-        ) / normalRows
-        val normalRowHeight = min(NORMAL_KEY_HEIGHT_DP * density, maxNormalHeight)
-            .coerceAtLeast(1f)
+        val (normalRowHeightDp, bottomRowHeightDp) = rowHeightsDp(
+            availableHeightDp = height / density,
+            normalRows = normalRows,
+        )
+        val normalRowHeight = normalRowHeightDp * density
+        val bottomRowHeight = bottomRowHeightDp * density
         var visualTop = 0f
         for (rowIndex in keyboardLayout.rows.indices) {
             val row = keyboardLayout.rows[rowIndex]
@@ -422,11 +578,90 @@ class KeyboardView(
         glideGeometry = geometry
     }
 
-    private fun keyTextSizeSp(key: KeySpec): Float = when (key.type) {
-        KeyType.SPACE -> SPACE_LABEL_TEXT_SIZE_SP
-        KeyType.MODE_SWITCH -> MODE_LABEL_TEXT_SIZE_SP
-        KeyType.CHARACTER -> MAIN_KEY_TEXT_SIZE_SP
-        else -> ACTION_TEXT_SIZE_SP
+    private fun fittedKeyTextSizePx(
+        key: KeySpec,
+        label: String,
+        left: Float,
+        right: Float,
+        rowHeightPx: Float,
+    ): Float {
+        val textScale = if (scalesWithKeyboardFont(key)) {
+            appliedFontScale
+        } else {
+            1f
+        }
+        val base = keyTextSizeSp(key, rowHeightPx) * textScale * scaledDensity
+        if (label.isEmpty()) return base
+
+        // Fit every label, not only the space label. This keeps ABC, !?#, =<\\ and
+        // other multi-character actions inside their key at every font-size setting.
+        val availableWidth = (right - left - keyInset * 2f - 8f * density).coerceAtLeast(1f)
+        val availableHeight = (rowHeightPx - 5f * density).coerceAtLeast(1f)
+        val minimumSize = (if (label.length > 2) 11f else 13f) * scaledDensity
+        var size = base
+        textPaint.textSize = size
+        textPaint.getFontMetrics(fontMetrics)
+        while (
+            (textPaint.measureText(label) > availableWidth ||
+                fontMetrics.bottom - fontMetrics.top > availableHeight) &&
+            size > minimumSize
+        ) {
+            size *= 0.92f
+            textPaint.textSize = size
+            textPaint.getFontMetrics(fontMetrics)
+        }
+        return size
+    }
+
+    private fun scalesWithKeyboardFont(key: KeySpec): Boolean =
+        key.type != KeyType.SHIFT &&
+            key.type != KeyType.BACKSPACE &&
+            key.type != KeyType.ENTER &&
+            key.type != KeyType.LANGUAGE_SWITCH
+
+    private fun keyTextSizeSp(key: KeySpec, rowHeightPx: Float): Float {
+        val baseRowHeightDp = if (
+            key.type == KeyType.SPACE ||
+            key.type == KeyType.MODE_SWITCH ||
+            key.type == KeyType.ENTER
+        ) BOTTOM_ROW_HEIGHT_DP else NORMAL_KEY_HEIGHT_DP
+        val scale = (rowHeightPx / density / baseRowHeightDp)
+            .coerceIn(MIN_LABEL_SCALE, MAX_LABEL_SCALE)
+        val baseTextSize = when (key.type) {
+            KeyType.SPACE -> SPACE_LABEL_TEXT_SIZE_SP
+            KeyType.SHIFT -> SHIFT_ICON_TEXT_SIZE_SP
+            KeyType.MODE_SWITCH -> MODE_LABEL_TEXT_SIZE_SP
+            KeyType.CHARACTER -> MAIN_KEY_TEXT_SIZE_SP
+            else -> ACTION_TEXT_SIZE_SP
+        }
+        return baseTextSize * scale
+    }
+
+    /**
+     * Distributes only the explicit Resize height delta across the normal and bottom rows.
+     * The compact default keeps the approved key proportions; larger/smaller settings genuinely
+     * stretch/shrink the key boxes instead of merely translating the keyboard.
+     */
+    private fun rowHeightsDp(availableHeightDp: Float, normalRows: Int): Pair<Float, Float> {
+        val safeRows = normalRows.coerceAtLeast(1)
+        val delta = availableHeightDp - RESIZE_BASE_HEIGHT_DP
+        val bottomHeight = (
+            BOTTOM_ROW_HEIGHT_DP + delta * BOTTOM_HEIGHT_DELTA_SHARE
+        ).coerceIn(MIN_BOTTOM_ROW_HEIGHT_DP, MAX_BOTTOM_ROW_HEIGHT_DP)
+        val availableForNormalRows = (
+            availableHeightDp - bottomHeight - ROW_GAP_DP * safeRows
+        ).coerceAtLeast(0f)
+        val fittingNormalHeight = availableForNormalRows / safeRows
+        val desiredNormalHeight =
+            NORMAL_KEY_HEIGHT_DP + delta * NORMAL_HEIGHT_DELTA_SHARE / safeRows
+        val normalHeight = if (state.isSymbolOrNumericMode() && safeRows == 3) {
+            // Primary/Extended/Numeric pages use their full saved height instead of leaving the
+            // compact English alphabet's unused room below the third row.
+            fittingNormalHeight
+        } else {
+            desiredNormalHeight.coerceAtMost(fittingNormalHeight)
+        }.coerceIn(MIN_NORMAL_KEY_HEIGHT_DP, MAX_NORMAL_KEY_HEIGHT_DP)
+        return normalHeight to bottomHeight
     }
 
     /**
@@ -434,15 +669,23 @@ class KeyboardView(
      * This keeps the approved proportions stable while remaining responsive to the live IME
      * width. The returned array stores left/right pairs in pixels.
      */
-    private fun horizontalVisualBounds(rowIndex: Int, row: com.example.aikeyboard.core.KeyboardRow): FloatArray {
+    private fun horizontalVisualBounds(
+        rowIndex: Int,
+        row: com.example.aikeyboard.core.KeyboardRow,
+    ): FloatArray {
         val count = row.keys.size
         val result = FloatArray(count * 2)
         if (count == 0) return result
 
         val gap = HORIZONTAL_GAP_DP * density
         val widths = FloatArray(count)
-        val widthDp = width / density
         val isBottomRow = rowIndex == keyboardLayout.rows.lastIndex
+        val centeredHomeRowIndex =
+            if (showNumberRow() && state.mode == KeyboardMode.LETTERS) 2 else 1
+        val isCenteredHomeRow =
+            state.mode == KeyboardMode.LETTERS &&
+                rowIndex == centeredHomeRowIndex &&
+                row.keys.all { it.type == KeyType.CHARACTER }
         val hasWideActions = row.keys.any {
             it.type == KeyType.SHIFT || it.type == KeyType.BACKSPACE
         }
@@ -452,7 +695,9 @@ class KeyboardView(
                 row.keys.forEachIndexed { index, key ->
                     widths[index] = when (key.type) {
                         KeyType.SPACE -> SPACE_KEY_WIDTH_DP * density
-                        KeyType.MODE_SWITCH, KeyType.ENTER, KeyType.BACKSPACE -> ACTION_KEY_WIDTH_DP * density
+                        KeyType.MODE_SWITCH,
+                        KeyType.ENTER,
+                        KeyType.BACKSPACE -> ACTION_KEY_WIDTH_DP * density
                         else -> NORMAL_KEY_WIDTH_DP * density
                     }
                 }
@@ -464,9 +709,12 @@ class KeyboardView(
             }
 
             hasWideActions -> {
-                val normalCount = row.keys.count {
+                val normalKeys = row.keys.filter {
                     it.type != KeyType.SHIFT && it.type != KeyType.BACKSPACE
-                }.coerceAtLeast(1)
+                }
+                val normalWeight = normalKeys.sumOf { it.weight.toDouble() }
+                    .toFloat()
+                    .coerceAtLeast(1f)
                 val fixed = row.keys.sumOf { key ->
                     when (key.type) {
                         KeyType.SHIFT -> SHIFT_KEY_WIDTH_DP * density
@@ -474,21 +722,17 @@ class KeyboardView(
                         else -> 0f
                     }.toDouble()
                 }.toFloat()
-                val normalWidth = (
-                    width - fixed - gap * (count - 1)
-                ) / normalCount
+                val normalWidth = (width - fixed - gap * (count - 1)) / normalWeight
                 row.keys.forEachIndexed { index, key ->
                     widths[index] = when (key.type) {
                         KeyType.SHIFT -> SHIFT_KEY_WIDTH_DP * density
                         KeyType.BACKSPACE -> BACKSPACE_KEY_WIDTH_DP * density
-                        else -> normalWidth
+                        else -> normalWidth * key.weight
                     }
                 }
             }
 
-            rowIndex == 1 -> {
-                // The A–L row is intentionally centered. At the 360dp baseline this produces
-                // roughly 22dp of side inset and 31dp normal keys.
+            isCenteredHomeRow -> {
                 val preferredInset = SECOND_ROW_INSET_DP * density
                 val normalWidthAtInset = (
                     width - preferredInset * 2f - gap * (count - 1)
@@ -501,14 +745,19 @@ class KeyboardView(
             }
 
             else -> {
-                val normalWidth = (width - gap * (count - 1)) / count
-                for (index in widths.indices) widths[index] = normalWidth
+                val totalWeight = row.keys.sumOf { it.weight.toDouble() }
+                    .toFloat()
+                    .coerceAtLeast(1f)
+                val weightedWidth = (width - gap * (count - 1)) / totalWeight
+                for (index in widths.indices) {
+                    widths[index] = weightedWidth * row.keys[index].weight
+                }
             }
         }
 
         val totalWidth = widths.sum() + gap * (count - 1)
         val start = when {
-            rowIndex == 1 && totalWidth < width -> SECOND_ROW_INSET_DP * density
+            isCenteredHomeRow && totalWidth < width -> SECOND_ROW_INSET_DP * density
             else -> ((width - totalWidth) / 2f).coerceAtLeast(0f)
         }
         var cursor = start
@@ -518,6 +767,80 @@ class KeyboardView(
             cursor += widths[index] + gap
         }
         return result
+    }
+
+    private fun activeSpaceLabel(): String = when (state.language) {
+        KeyboardLanguage.ENGLISH -> "English"
+        KeyboardLanguage.URDU -> "اردو"
+        KeyboardLanguage.ROMAN_URDU -> "Roman Urdu"
+    }
+
+    private fun displayLabel(key: KeySpec, shifted: Boolean): String = when (key.type) {
+        KeyType.SPACE -> activeSpaceLabel()
+        else -> key.labelFor(shifted)
+    }
+
+    /** Compact globe vector; its bounds are inset from the key rectangle by construction. */
+    private fun hasLongPressAlternates(key: KeySpec): Boolean {
+        if (key.type != KeyType.CHARACTER || key.alternateTexts.isEmpty()) return false
+        return if (key.outputText == "," || key.outputText == "،") {
+            emojiShortcutEnabled()
+        } else {
+            longPressEnabled()
+        }
+    }
+
+    private fun drawAlternateHint(
+        canvas: Canvas,
+        alternate: String,
+        left: Float,
+        right: Float,
+        rowTop: Float,
+    ) {
+        textPaint.color = theme.textColor
+        val hintScale = if (alternate == "🙂") {
+            1f
+        } else {
+            appliedFontScale
+        }
+        textPaint.textSize = ALTERNATE_HINT_TEXT_SIZE_SP * hintScale * scaledDensity
+        textPaint.textAlign = Paint.Align.RIGHT
+        textPaint.getFontMetrics(fontMetrics)
+        val baseline = rowTop + keyInset + ALTERNATE_HINT_TOP_PADDING_DP * density -
+            fontMetrics.ascent
+        canvas.drawText(
+            alternate,
+            right - keyInset - ALTERNATE_HINT_RIGHT_PADDING_DP * density,
+            baseline,
+            textPaint,
+        )
+        textPaint.textAlign = Paint.Align.LEFT
+    }
+
+    private fun drawLanguageSwitchIcon(canvas: Canvas, centerX: Float, centerY: Float) {
+        keyPaint.color = theme.textColor
+        keyPaint.style = Paint.Style.STROKE
+        keyPaint.strokeWidth = 1.8f * density
+        keyPaint.strokeCap = Paint.Cap.ROUND
+        keyPaint.strokeJoin = Paint.Join.ROUND
+        val radius = 8.5f * density
+        canvas.drawCircle(centerX, centerY, radius, keyPaint)
+        canvas.drawOval(
+            centerX - 4.2f * density,
+            centerY - radius,
+            centerX + 4.2f * density,
+            centerY + radius,
+            keyPaint,
+        )
+        canvas.drawOval(
+            centerX - radius,
+            centerY - 4.2f * density,
+            centerX + radius,
+            centerY + 4.2f * density,
+            keyPaint,
+        )
+        canvas.drawLine(centerX - radius, centerY, centerX + radius, centerY, keyPaint)
+        keyPaint.style = Paint.Style.FILL
     }
 
     private fun updateGlidePath(x: Float, y: Float) {
@@ -530,6 +853,8 @@ class KeyboardView(
         if (!glideActive && glideDistance >= GLIDE_START_DISTANCE_PX * density &&
             distinctGlideKeyCount() >= 2
         ) {
+            repeatHandler.removeCallbacks(alternateLongPressRunnable)
+            // Glide takes ownership only after movement has already cancelled Long Press.
             glideActive = true
         }
         if (glideActive) invalidate()
@@ -546,6 +871,19 @@ class KeyboardView(
             }
         }
         return count
+    }
+
+    private fun decodeBackground(uriValue: String?): Bitmap? {
+        if (uriValue.isNullOrBlank()) return null
+        return runCatching {
+            val options = BitmapFactory.Options().apply {
+                inSampleSize = 2
+                inPreferredConfig = Bitmap.Config.ARGB_8888
+            }
+            context.contentResolver.openInputStream(Uri.parse(uriValue)).use { input ->
+                BitmapFactory.decodeStream(input, null, options)
+            }
+        }.getOrNull()
     }
 
     private fun drawGlideTrail(canvas: Canvas) {
@@ -617,12 +955,18 @@ class KeyboardView(
     private fun clearPressedState() {
         repeatHandler.removeCallbacks(repeatRunnable)
         repeatHandler.removeCallbacks(spaceLongPressRunnable)
+        repeatHandler.removeCallbacks(alternateLongPressRunnable)
+        longPressTriggered = false
+        longPressCancelled = false
+        longPressDownX = 0f
+        longPressDownY = 0f
         if (backspaceSwipeActive) {
             backspaceSwipeActive = false
             onBackspaceSwipeCancelled()
         }
         backspaceRepeatCount = 0
         backspaceLastX = 0f
+        backspaceSwipeStartX = 0f
         backspaceStartY = 0f
         backspaceAccumulatedLeft = 0f
         spaceCommitted = false
@@ -651,7 +995,7 @@ class KeyboardView(
 
     private fun updateBackspaceSwipe(x: Float, y: Float) {
         if (!backspaceSwipeActive) {
-            val leftDistance = backspaceLastX - x
+            val leftDistance = backspaceSwipeStartX - x
             val verticalDistance = kotlin.math.abs(y - backspaceStartY)
             if (leftDistance < BACKSPACE_SWIPE_START_DISTANCE_DP * density ||
                 leftDistance < verticalDistance
@@ -664,18 +1008,64 @@ class KeyboardView(
             backspaceSwipeActive = true
             backspaceAccumulatedLeft = 0f
             backspaceLastX = x
-            onBackspaceSwipeMoved()
+            onBackspaceSwipeMoved(leftDistance)
             return
         }
 
-        val leftDelta = backspaceLastX - x
         backspaceLastX = x
-        backspaceAccumulatedLeft += leftDelta
-        val step = BACKSPACE_SWIPE_STEP_DP * density
-        while (backspaceAccumulatedLeft >= step) {
-            onBackspaceSwipeMoved()
-            backspaceAccumulatedLeft -= step
+        // Absolute travel keeps the visible selection reversible when the finger moves right.
+        onBackspaceSwipeMoved((backspaceSwipeStartX - x).coerceAtLeast(0f))
+    }
+
+    private fun resolvedLayout(): KeyboardLayout {
+        val base = layoutProvider.layoutFor(state.language, state.mode)
+        // The normal globe/language key is only present in Alphabet mode. Symbol layers use
+        // ABC/1234/?123 navigation in its place.
+        val visible = showLanguageSwitch() && state.isAlphabetMode()
+        val numberVisible = showNumberRow() && state.mode == KeyboardMode.LETTERS
+        if (base !== lastBaseLayout ||
+            visible != lastLanguageSwitchVisible ||
+            numberVisible != lastNumberRowVisible
+        ) {
+            lastBaseLayout = base
+            lastLanguageSwitchVisible = visible
+            lastNumberRowVisible = numberVisible
+            var resolved = if (numberVisible) withNumberRow(base) else base
+            if (visible) resolved = withLanguageSwitch(resolved)
+            keyboardLayout = resolved
         }
+        return keyboardLayout
+    }
+
+    private fun synchronizeLayout() {
+        val previousLayout = keyboardLayout
+        val currentLayout = resolvedLayout()
+        if (currentLayout !== previousLayout) rebuildMetrics()
+    }
+
+    private fun withNumberRow(base: KeyboardLayout): KeyboardLayout {
+        val firstRow = base.rows.firstOrNull()
+        if (firstRow != null && firstRow.keys.size == 10 &&
+            firstRow.keys.all { it.outputText in "1234567890" }
+        ) return base
+        val numberText = "1234567890"
+        val numberRow = com.example.aikeyboard.core.KeyboardRow(
+            Array(numberText.length) { index -> KeySpec.punctuation(numberText[index].toString()) },
+        )
+        return KeyboardLayout(arrayOf(numberRow, *base.rows))
+    }
+
+    private fun withLanguageSwitch(base: KeyboardLayout): KeyboardLayout {
+        val lastRow = base.rows.lastOrNull() ?: return base
+        if (lastRow.keys.any { it.type == KeyType.LANGUAGE_SWITCH }) return base
+        val insertAt = lastRow.keys.indexOfFirst { it.type == KeyType.MODE_SWITCH }
+            .let { if (it < 0) 0 else it + 1 }
+        val keys = lastRow.keys.toMutableList().apply {
+            add(insertAt, KeySpec.languageSwitch(""))
+        }.toTypedArray()
+        val rows = base.rows.copyOf()
+        rows[rows.lastIndex] = com.example.aikeyboard.core.KeyboardRow(keys)
+        return KeyboardLayout(rows)
     }
 
     private fun updateSpaceCursor(x: Float, y: Float) {
@@ -727,6 +1117,17 @@ class KeyboardView(
         const val NORMAL_KEY_WIDTH_DP = 31f
         const val NORMAL_KEY_HEIGHT_DP = 47f
         const val BOTTOM_ROW_HEIGHT_DP = 50f
+        const val RESIZE_BASE_HEIGHT_DP = 270f
+        const val NORMAL_HEIGHT_DELTA_SHARE = 0.75f
+        const val BOTTOM_HEIGHT_DELTA_SHARE = 0.25f
+        const val MIN_NORMAL_KEY_HEIGHT_DP = 32f
+        const val MAX_NORMAL_KEY_HEIGHT_DP = 110f
+        const val MIN_BOTTOM_ROW_HEIGHT_DP = 44f
+        const val MAX_BOTTOM_ROW_HEIGHT_DP = 92f
+        const val MIN_LABEL_SCALE = 0.9f
+        const val MAX_LABEL_SCALE = 1.25f
+        const val MIN_FONT_SCALE = 0.70f
+        const val MAX_FONT_SCALE = 1.30f
         const val SHIFT_KEY_WIDTH_DP = 48f
         const val BACKSPACE_KEY_WIDTH_DP = 49f
         const val SPACE_KEY_WIDTH_DP = 138f
@@ -738,6 +1139,14 @@ class KeyboardView(
         const val ACTION_TEXT_SIZE_SP = 28f
         const val MODE_LABEL_TEXT_SIZE_SP = 19f
         const val SPACE_LABEL_TEXT_SIZE_SP = 20f
+        const val SHIFT_ICON_TEXT_SIZE_SP = 34f
+        const val ALTERNATE_HINT_TEXT_SIZE_SP = 11f
+        const val ALTERNATE_HINT_TOP_PADDING_DP = 3f
+        const val ALTERNATE_HINT_RIGHT_PADDING_DP = 4f
+        const val DEFAULT_LONG_PRESS_DELAY_MS = 300L
+        const val MIN_LONG_PRESS_DELAY_MS = 100L
+        const val MAX_LONG_PRESS_DELAY_MS = 700L
+        const val LONG_PRESS_MOVE_TOLERANCE_DP = 12f
         val BACKGROUND_COLOR = Color.rgb(243, 244, 246)
         val KEY_COLOR = Color.WHITE
         val SPECIAL_KEY_COLOR = Color.rgb(221, 227, 244)

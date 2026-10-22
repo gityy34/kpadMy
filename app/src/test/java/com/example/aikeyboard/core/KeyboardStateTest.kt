@@ -50,6 +50,8 @@ class KeyboardStateTest {
         assertEquals(KeyboardLanguage.URDU, state.language)
         assertEquals(ShiftState.OFF, state.shiftState)
         state.toggleLanguage()
+        assertEquals(KeyboardLanguage.ROMAN_URDU, state.language)
+        state.toggleLanguage()
         assertEquals(KeyboardLanguage.ENGLISH, state.language)
     }
 

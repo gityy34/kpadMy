@@ -3,9 +3,12 @@ package com.example.aikeyboard.ui
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
+import android.os.Handler
+import android.os.Looper
 import android.view.MotionEvent
-import android.view.View
 import android.view.ViewConfiguration
+import android.widget.PopupMenu
+import android.view.View
 import com.example.aikeyboard.theme.KeyboardTheme
 import kotlin.math.abs
 
@@ -17,9 +20,19 @@ class ToolsPanelView(
     context: Context,
     private val onToolSelected: (String) -> Unit,
     private val isToolEnabled: (String) -> Boolean = { true },
+    private val onAddToToolbar: (String) -> Unit = {},
+    private val isToolInToolbar: (String) -> Boolean = { false },
 ) : View(context) {
     private val density = resources.displayMetrics.density
     private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
+    private val handler = Handler(Looper.getMainLooper())
+    private val longPressRunnable = Runnable {
+        val item = items.getOrNull(pressed)
+        if (item == null || dragging) return@Runnable
+        longPressTriggered = true
+        showToolActions(item.first)
+        invalidate()
+    }
     private val background = Paint(Paint.ANTI_ALIAS_FLAG)
     private val card = Paint(Paint.ANTI_ALIAS_FLAG)
     private val text = Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -40,6 +53,7 @@ class ToolsPanelView(
         "redo" to ("↷" to "Redo"),
         "themes" to ("◈" to "Themes"),
         "emoji" to ("☺" to "Emoji"),
+        "clipboard" to ("▣" to "Clipboard"),
         "ai" to ("✦" to "AI tools"),
     )
     private var theme = KeyboardTheme.SOLID_WHITE
@@ -48,12 +62,14 @@ class ToolsPanelView(
     private var downY = 0f
     private var lastY = 0f
     private var dragging = false
+    private var longPressTriggered = false
 
     fun applyTheme(value: KeyboardTheme) {
         theme = value
         background.color = value.backgroundColor
         text.color = value.textColor
         icon.color = value.accentColor
+        contentDescription = "Tools panel. Clipboard opens local recent and pinned text."
         invalidate()
     }
 
@@ -138,7 +154,11 @@ class ToolsPanelView(
                 downY = event.y
                 lastY = event.y
                 dragging = false
+                longPressTriggered = false
                 pressed = indexAt(event.x, event.y)
+                if (pressed >= 0) {
+                    handler.postDelayed(longPressRunnable, ViewConfiguration.getLongPressTimeout().toLong())
+                }
                 invalidate()
                 return true
             }
@@ -146,6 +166,7 @@ class ToolsPanelView(
                 val delta = event.y - lastY
                 if (!dragging && abs(event.y - downY) > touchSlop) {
                     dragging = true
+                    handler.removeCallbacks(longPressRunnable)
                     pressed = -1
                 }
                 if (dragging) {
@@ -156,7 +177,8 @@ class ToolsPanelView(
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                val selected = if (!dragging) {
+                handler.removeCallbacks(longPressRunnable)
+                val selected = if (!dragging && !longPressTriggered) {
                     val index = indexAt(event.x, event.y)
                     if (index == pressed && items.getOrNull(index)?.let { isToolEnabled(it.first) } == true) {
                         items.getOrNull(index)?.first
@@ -164,14 +186,17 @@ class ToolsPanelView(
                 } else null
                 pressed = -1
                 dragging = false
+                longPressTriggered = false
                 invalidate()
                 selected?.let(onToolSelected)
                 performClick()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
+                handler.removeCallbacks(longPressRunnable)
                 pressed = -1
                 dragging = false
+                longPressTriggered = false
                 invalidate()
                 return true
             }
@@ -182,6 +207,25 @@ class ToolsPanelView(
     override fun performClick(): Boolean {
         super.performClick()
         return true
+    }
+
+    private fun showToolActions(key: String) {
+        val popup = PopupMenu(context, this)
+        val alreadyPresent = isToolInToolbar(key)
+        val supported = key in TOOLBAR_SUPPORTED_ITEMS
+        val action = popup.menu.add(
+            when {
+                !supported -> "Unavailable on toolbar"
+                alreadyPresent -> "Already on toolbar"
+                else -> "Add to Toolbar"
+            },
+        )
+        action.isEnabled = supported && !alreadyPresent
+        popup.setOnMenuItemClickListener {
+            if (supported && !alreadyPresent) onAddToToolbar(key)
+            true
+        }
+        popup.show()
     }
 
     private fun indexAt(x: Float, y: Float): Int {
@@ -211,5 +255,11 @@ class ToolsPanelView(
     private fun contentHeight(cardHeight: Float, gap: Float): Float {
         val rows = (items.size + 1) / 2
         return gap * 2f + rows * cardHeight + (rows - 1) * gap
+    }
+
+    private companion object {
+        val TOOLBAR_SUPPORTED_ITEMS = setOf(
+            "settings", "search", "resize", "language", "themes", "emoji", "clipboard", "undo", "redo",
+        )
     }
 }
