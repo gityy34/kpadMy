@@ -237,33 +237,62 @@ class KeyboardView(
                 val left = metrics.left[column]
                 val right = metrics.right[column]
                 val isPressed = rowIndex == pressedRow && column == pressedColumn
+                // Numeric mode uses a visually distinct operator rail while keeping the
+                // original touch rectangles and keyboard geometry unchanged.
+                val isNumericRailKey = state.mode == KeyboardMode.NUMERIC_PAD && (
+                    (rowIndex < 4 && column == 0) ||
+                        (rowIndex < 3 && column == row.keys.lastIndex)
+                    )
+                val isNumericCircularAbc = state.mode == KeyboardMode.NUMERIC_PAD &&
+                    rowIndex == keyboardLayout.rows.lastIndex &&
+                    key.type == KeyType.MODE_SWITCH &&
+                    key.labelFor(false) == "ABC"
                 keyPaint.color = when {
                     isPressed -> theme.pressedKeyColor
                     key.type == KeyType.SHIFT && shifted -> theme.shiftColor
+                    isNumericRailKey -> theme.specialKeyColor
                     key.type == KeyType.MODE_SWITCH ||
                         key.type == KeyType.LANGUAGE_SWITCH ||
                         key.type == KeyType.ENTER -> theme.specialKeyColor
                     else -> theme.keyColor
                 }
                 keyPaint.style = Paint.Style.FILL
-                canvas.drawRoundRect(
-                    left + keyInset,
-                    metrics.top + keyInset,
-                    right - keyInset,
-                    metrics.bottom - keyInset,
-                    cornerRadius,
-                    cornerRadius,
-                    keyPaint,
-                )
+                if (isNumericCircularAbc) {
+                    canvas.drawOval(
+                        left + keyInset,
+                        metrics.top + keyInset,
+                        right - keyInset,
+                        metrics.bottom - keyInset,
+                        keyPaint,
+                    )
+                } else {
+                    canvas.drawRoundRect(
+                        left + keyInset,
+                        metrics.top + keyInset,
+                        right - keyInset,
+                        metrics.bottom - keyInset,
+                        if (isNumericRailKey) cornerRadius * 0.7f else cornerRadius,
+                        if (isNumericRailKey) cornerRadius * 0.7f else cornerRadius,
+                        keyPaint,
+                    )
+                }
                 if (theme.keyStyle == KeyStyle.BORDERED) {
                     keyPaint.style = Paint.Style.STROKE
                     keyPaint.strokeWidth = density
                     keyPaint.color = theme.borderColor
-                    canvas.drawRoundRect(
-                        left + keyInset, metrics.top + keyInset,
-                        right - keyInset, metrics.bottom - keyInset,
-                        cornerRadius, cornerRadius, keyPaint,
-                    )
+                    if (isNumericCircularAbc) {
+                        canvas.drawOval(
+                            left + keyInset, metrics.top + keyInset,
+                            right - keyInset, metrics.bottom - keyInset, keyPaint,
+                        )
+                    } else {
+                        val railRadius = if (isNumericRailKey) cornerRadius * 0.7f else cornerRadius
+                        canvas.drawRoundRect(
+                            left + keyInset, metrics.top + keyInset,
+                            right - keyInset, metrics.bottom - keyInset,
+                            railRadius, railRadius, keyPaint,
+                        )
+                    }
                     keyPaint.style = Paint.Style.FILL
                 }
 
@@ -533,14 +562,24 @@ class KeyboardView(
     ): Float {
         val base = keyTextSizeSp(key, rowHeightPx) *
             fontScale().coerceIn(MIN_FONT_SCALE, MAX_FONT_SCALE) * scaledDensity
-        if (key.type != KeyType.SPACE || label.isEmpty()) return base
+        if (label.isEmpty()) return base
 
-        val available = (right - left - keyInset * 2f - 8f * density).coerceAtLeast(1f)
+        // Fit every label, not only the space label. This keeps ABC, !?#, =<\\ and
+        // other multi-character actions inside their key at every font-size setting.
+        val availableWidth = (right - left - keyInset * 2f - 8f * density).coerceAtLeast(1f)
+        val availableHeight = (rowHeightPx - 5f * density).coerceAtLeast(1f)
+        val minimumSize = (if (label.length > 2) 11f else 13f) * scaledDensity
         var size = base
         textPaint.textSize = size
-        while (textPaint.measureText(label) > available && size > 14f * scaledDensity) {
-            size *= 0.94f
+        textPaint.getFontMetrics(fontMetrics)
+        while (
+            (textPaint.measureText(label) > availableWidth ||
+                fontMetrics.bottom - fontMetrics.top > availableHeight) &&
+            size > minimumSize
+        ) {
+            size *= 0.92f
             textPaint.textSize = size
+            textPaint.getFontMetrics(fontMetrics)
         }
         return size
     }
