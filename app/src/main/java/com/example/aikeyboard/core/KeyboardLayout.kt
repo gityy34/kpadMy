@@ -12,8 +12,8 @@ interface KeyboardLayoutProvider {
 }
 
 /**
- * Phase 1 layouts are fixed and allocated once. Later language packs can implement the same
- * provider without changing the input engine or IME lifecycle.
+ * Stable layouts for the alphabet, primary symbols, extended symbols, and numeric keypad.
+ * The IME keeps one active KeyboardState; these layouts only describe the current mode.
  */
 class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
     private val englishLetters = KeyboardLayout(
@@ -47,7 +47,7 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
             row("ٹثجچحخءھئؤ"),
             KeyboardRow(
                 arrayOf(
-                    KeySpec.action(KeyType.MODE_SWITCH, "۱۲۳", 1.5f),
+                    KeySpec.action(KeyType.MODE_SWITCH, "?123", 1.5f),
                     KeySpec.punctuation("،"),
                     KeySpec.space(),
                     KeySpec.punctuation("۔"),
@@ -57,41 +57,84 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
         ),
     )
 
-    private val englishSymbols = symbolsLayout("ABC", ",", ".", "_\"':;!?/")
-    private val urduSymbols = symbolsLayout("حروف", "،", "۔", "_\"':;!؟/")
+    private val englishPrimarySymbols = primarySymbols(",", ".")
+    private val urduPrimarySymbols = primarySymbols("،", "۔")
+    private val extendedSymbols = extendedSymbols()
+    private val numericPad = numericPad()
 
     override fun layoutFor(language: KeyboardLanguage, mode: KeyboardMode): KeyboardLayout =
-        when {
-            mode == KeyboardMode.SYMBOLS && language == KeyboardLanguage.URDU -> urduSymbols
-            mode == KeyboardMode.SYMBOLS -> englishSymbols
-            language == KeyboardLanguage.URDU -> urduLetters
-            else -> englishLetters
+        when (mode) {
+            KeyboardMode.LETTERS -> if (language == KeyboardLanguage.URDU) urduLetters else englishLetters
+            KeyboardMode.EXTENDED_SYMBOLS -> extendedSymbols
+            KeyboardMode.NUMERIC_PAD -> numericPad
+            KeyboardMode.PRIMARY_SYMBOLS,
+            KeyboardMode.SYMBOLS -> if (language == KeyboardLanguage.URDU) urduPrimarySymbols else englishPrimarySymbols
         }
 
     private fun row(text: String): KeyboardRow = KeyboardRow(keys(text))
 
-    private fun symbolsLayout(
-        modeLabel: String,
-        comma: String,
-        period: String,
-        punctuationRow: String,
-    ): KeyboardLayout = KeyboardLayout(
-        rows = arrayOf(
-            row("1234567890"),
-            row("@#$%&*-+()"),
-            row(punctuationRow),
-            KeyboardRow(
-                arrayOf(
-                    KeySpec.action(KeyType.MODE_SWITCH, modeLabel, 1.35f),
-                    KeySpec.punctuation(comma),
-                    KeySpec.space(3.5f),
-                    KeySpec.punctuation(period),
-                    KeySpec.action(KeyType.BACKSPACE, "⌫", 1.5f),
-                    KeySpec.action(KeyType.ENTER, "↵", 1.5f),
+    private fun symbolRow(symbols: List<String>): KeyboardRow =
+        KeyboardRow(symbols.map { KeySpec.punctuation(it) }.toTypedArray())
+
+    private fun primarySymbols(comma: String, period: String): KeyboardLayout =
+        KeyboardLayout(
+            rows = arrayOf(
+                symbolRow(listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")),
+                symbolRow(listOf("@", "#", "$", "%", "&", "*", "-", "+", "(", ")")),
+                symbolRow(listOf("_", "\"", "'", ":", ";", "!", "?", "/", comma, period)),
+                KeyboardRow(
+                    arrayOf(
+                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.1f),
+                        KeySpec.action(KeyType.MODE_SWITCH, "More", 1.1f),
+                        KeySpec.action(KeyType.MODE_SWITCH, "1234", 1.1f),
+                        KeySpec.space(2.4f),
+                        KeySpec.punctuation("."),
+                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.2f),
+                        KeySpec.action(KeyType.ENTER, "↵", 1.2f),
+                    ),
                 ),
             ),
-        ),
-    )
+        )
+
+    private fun extendedSymbols(): KeyboardLayout =
+        KeyboardLayout(
+            rows = arrayOf(
+                symbolRow(listOf("~", "\u0060", "|", "•", "√", "π", "÷", "×", "±", "≠")),
+                symbolRow(listOf("£", "¢", "€", "¥", "§", "°", "^", "=", "∞", "µ")),
+                symbolRow(listOf("{", "}", "[", "]", "<", ">", "\\", "©", "®", "™", "✓")),
+                KeyboardRow(
+                    arrayOf(
+                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.1f),
+                        KeySpec.action(KeyType.MODE_SWITCH, "←", 1.1f),
+                        KeySpec.action(KeyType.MODE_SWITCH, "1234", 1.1f),
+                        KeySpec.space(2.4f),
+                        KeySpec.punctuation("."),
+                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.2f),
+                        KeySpec.action(KeyType.ENTER, "↵", 1.2f),
+                    ),
+                ),
+            ),
+        )
+
+    private fun numericPad(): KeyboardLayout =
+        KeyboardLayout(
+            rows = arrayOf(
+                symbolRow(listOf("1", "2", "3", "+")),
+                symbolRow(listOf("4", "5", "6", "-")),
+                symbolRow(listOf("7", "8", "9", "*")),
+                symbolRow(listOf("%", "0", "=", "/")),
+                KeyboardRow(
+                    arrayOf(
+                        KeySpec.action(KeyType.MODE_SWITCH, "ABC", 1.1f),
+                        KeySpec.action(KeyType.MODE_SWITCH, "Symbols", 1.1f),
+                        KeySpec.punctuation(","),
+                        KeySpec.punctuation("."),
+                        KeySpec.action(KeyType.BACKSPACE, "⌫", 1.2f),
+                        KeySpec.action(KeyType.ENTER, "↵", 1.2f),
+                    ),
+                ),
+            ),
+        )
 
     private fun keys(text: String): Array<KeySpec> = Array(text.length) { index ->
         val character = text[index].toString()
@@ -107,9 +150,8 @@ class DefaultKeyboardLayoutProvider : KeyboardLayoutProvider {
     }
 
     /**
-     * The mapping follows familiar mobile-keyboard punctuation placement while keeping each
-     * alternate as real committed text. Urdu letters expose useful Arabic diacritics; Roman Urdu
-     * reuses the English mapping through the existing Latin layout.
+     * Familiar alternate marks are kept in the existing long-press path. Urdu letters expose
+     * Arabic diacritics, while Roman Urdu reuses the English mapping through the Latin layout.
      */
     private fun secondaryCharacters(character: String): List<String> = when (character.lowercase()) {
         "q" -> listOf("%")
